@@ -1,3 +1,4 @@
+// src/screens/Login/LoginScreen.js
 import React, { useMemo, useState } from "react";
 import {
   SafeAreaView,
@@ -50,10 +51,7 @@ export default function LoginScreen({ navigation }) {
           JSON.stringify({ email: data.user.email })
         );
       }
-      Alert.alert(
-        "Sucesso",
-        `Bem-vindo, ${data.user.name || data.user.email}!`
-      );
+      Alert.alert("Sucesso", `Bem-vindo, ${data.user.name || data.user.email}!`);
       navigation.navigate("Formulario");
     } catch (e) {
       Alert.alert("Erro", String(e.message || e));
@@ -95,51 +93,34 @@ export default function LoginScreen({ navigation }) {
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPass}
-              style={[
-                styles.input,
-                passError ? styles.inputError : null,
-                { flex: 1 },
-              ]}
+              style={[styles.input, passError ? styles.inputError : null, { flex: 1 }]}
             />
-            <TouchableOpacity
-              onPress={() => setShowPass((v) => !v)}
-              style={styles.showBtn}
-            >
-              <Text style={styles.showBtnText}>
-                {showPass ? "Ocultar" : "Mostrar"}
-              </Text>
+            <TouchableOpacity onPress={() => setShowPass(v => !v)} style={styles.showBtn}>
+              <Text style={styles.showBtnText}>{showPass ? "Ocultar" : "Mostrar"}</Text>
             </TouchableOpacity>
           </View>
           {!!passError && <Text style={styles.error}>{passError}</Text>}
         </View>
 
+        {/* ---- SUBSTITUÍDO AQUI ---- */}
         <View style={styles.row}>
           <View style={styles.remember}>
             <Switch value={remember} onValueChange={setRemember} />
             <Text style={styles.rememberText}>Lembrar-me</Text>
           </View>
-          <TouchableOpacity
-            onPress={() =>
-              Alert.alert("Recuperar senha", "Link enviado (exemplo).")
-            }
-          >
+
+          <TouchableOpacity onPress={() => navigation.navigate("ForgotPasswordRequest")}>
             <Text style={styles.forgot}>Esqueci minha senha</Text>
           </TouchableOpacity>
         </View>
+        {/* ------------------------- */}
 
         <TouchableOpacity
           onPress={handleLogin}
           disabled={!formValid || loading}
-          style={[
-            styles.button,
-            (!formValid || loading) && styles.buttonDisabled,
-          ]}
+          style={[styles.button, (!formValid || loading) && styles.buttonDisabled]}
         >
-          {loading ? (
-            <ActivityIndicator />
-          ) : (
-            <Text style={styles.buttonText}>Entrar</Text>
-          )}
+{loading ? <ActivityIndicator /> : <Text style={styles.buttonText}>Entrar</Text>}
         </TouchableOpacity>
 
         <View style={styles.divider} />
@@ -175,29 +156,13 @@ const styles = StyleSheet.create({
   inputError: { borderColor: "#ef4444" },
   error: { color: "#ef4444", marginTop: 6 },
   passRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  showBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: "#e2e8f0",
-  },
+  showBtn: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, backgroundColor: "#e2e8f0" },
   showBtnText: { fontWeight: "600", color: "#0f172a" },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 8,
-  },
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8 },
   remember: { flexDirection: "row", alignItems: "center", gap: 8 },
   rememberText: { color: "#010101" },
   forgot: { color: "#93c5fd", fontWeight: "600" },
-  button: {
-    backgroundColor: "#2563eb",
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: "center",
-    marginTop: 16,
-  },
+  button: { backgroundColor: "#2563eb", paddingVertical: 14, borderRadius: 14, alignItems: "center", marginTop: 16 },
   buttonDisabled: { opacity: 0.6 },
   buttonText: { color: "white", fontSize: 16, fontWeight: "700" },
   divider: { height: 1, backgroundColor: "#1f2937", marginVertical: 16 },

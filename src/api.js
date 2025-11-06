@@ -1,28 +1,22 @@
 // src/api.js
-import AsyncStorage from "@react-native-async-storage/async-storage";
+const BASE_URL = "http://192.168.0.5:3333"; // ou seu IP da máquina na mesma rede
 
-// src/api.js
-export const BASE_URL = "http://10.0.0.182:3333";
-
-export async function api(
-  path,
-  { method = "GET", body, auth = false } = {}
-) {
+export async function api(path, { method = "GET", body, auth } = {}) {
   const headers = { "Content-Type": "application/json" };
-
-  // se a rota exigir token (auth: true), pega do AsyncStorage e envia
-  if (auth) {
-    const token = await AsyncStorage.getItem("@token");
-    if (token) headers.Authorization = `Bearer ${token}`;
-  }
-
-  const res = await fetch(`${BASE_URL}${path}`, {
+  // (se tiver token e precisar)
+  const opts = {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  };
+  if (body) opts.body = JSON.stringify(body);
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+  const res = await fetch(`${BASE_URL}${path}`, opts);
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { /* ignore */ }
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}${data?.message ? " – " + data.message : ""}`);
+  }
   return data;
 }

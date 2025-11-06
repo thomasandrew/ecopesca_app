@@ -1,4 +1,3 @@
-// src/screens/Formulario/FormularioScreen.js
 import React, { useState } from "react";
 import {
   View,
@@ -16,9 +15,22 @@ import {
   Dimensions,
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
+// usar API legacy p/ garantir base64
+import * as FileSystem from "expo-file-system/legacy";
+import Svg, { Rect, Text as SvgText, Circle } from "react-native-svg";
+import Constants from "expo-constants";
 import { api } from "../../api";
 
-/* ===================== TEMA ===================== */
+/* ========= CONFIG ROBOFLOW ========= */
+const ROBOFLOW_API_KEY =
+  Constants?.expoConfig?.extra?.ROBOFLOW_API_KEY ?? "SUA_API_KEY_AQUI";
+const ROBOFLOW_MODEL = "ecopesca_app-zpwxc"; // <- confira no Deploy
+const ROBOFLOW_VERSION = "2";
+const ROBOFLOW_CLASS = "fish";
+
+/* ========= TEMA ========= */
 const COLORS = {
   bg: "#F7F7F7",
   text: "#102A43",
@@ -31,31 +43,28 @@ const COLORS = {
   link: "#2B6CB0",
 };
 
-/* ===================== MAPA ===================== */
 const MAP_SOURCE = require("../../../assets/foto_areas.jpg");
 const { width: SCREEN_W } = Dimensions.get("window");
-const PADDING_X = 24; // igual ao padding horizontal da tela
+const PADDING_X = 24;
 const MAP_META = Image.resolveAssetSource(MAP_SOURCE);
 const MAP_RATIO = (MAP_META?.width || 1) / (MAP_META?.height || 1);
 const MAP_W = SCREEN_W - PADDING_X * 2;
-const MAP_MAX_H = 220; // limite dentro do dropdown
+const MAP_MAX_H = 220;
 const MAP_H = Math.min(MAP_W / MAP_RATIO, MAP_MAX_H);
 
-/* ===================== DROPDOWN CUSTOM ===================== */
+/* ========= Dropdown simples ========= */
 function Dropdown({
   label,
   value,
   onChange,
   options = [],
   placeholder = "Selecione...",
-  renderHeader, // (close) => ReactNode
+  renderHeader,
 }) {
   const [open, setOpen] = useState(false);
-
   return (
     <View style={ddStyles.block}>
       {!!label && <Text style={ddStyles.label}>{label}</Text>}
-
       <TouchableOpacity
         style={ddStyles.input}
         onPress={() => setOpen(true)}
@@ -121,7 +130,6 @@ function Dropdown({
     </View>
   );
 }
-
 const ddStyles = StyleSheet.create({
   block: {
     backgroundColor: COLORS.inputBg,
@@ -145,7 +153,6 @@ const ddStyles = StyleSheet.create({
   },
   value: { fontSize: 16, color: COLORS.text },
   chevron: { fontSize: 18, color: COLORS.link, marginLeft: 8 },
-
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.25)",
@@ -169,7 +176,6 @@ const ddStyles = StyleSheet.create({
   },
   sheetTitle: { fontSize: 16, fontWeight: "800", color: COLORS.label },
   close: { color: COLORS.link, fontWeight: "700" },
-
   headerBox: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8 },
   item: { paddingVertical: 14, paddingHorizontal: 16 },
   itemSelected: { backgroundColor: "#F0F5FF" },
@@ -178,7 +184,7 @@ const ddStyles = StyleSheet.create({
   sep: { height: 1, backgroundColor: "#EEF2F6" },
 });
 
-/* ===================== DADOS FIXOS ===================== */
+/* ========= Dados ========= */
 const AREAS = Array.from({ length: 10 }, (_, i) => `Área ${i + 1}`);
 const DIAS = [
   "Segunda",
@@ -228,7 +234,35 @@ const VENTO = [
   "Vento médio",
 ];
 
-/* ===================== TELA FORMULÁRIO ===================== */
+/* ========= Helpers de medição ========= */
+const getMaiorDeteccao = (preds = []) =>
+  preds.reduce(
+    (best, p) =>
+      (best?.width || 0) * (best?.height || 0) > p.width * p.height ? best : p,
+    preds[0]
+  );
+
+const estimarComprimentoCM = (pred, calibPts, realDistCm, scaleX, scaleY) => {
+  if (!pred || !calibPts?.[0] || !calibPts?.[1] || !realDistCm) return null;
+
+  // 1) diagonal da caixa do peixe (em pixels da inferência)
+  const fishPx = Math.hypot(pred.width, pred.height);
+
+  // 2) distância entre os dois toques em pixels da inferência
+  const [p1, p2] = calibPts; // pontos no preview
+  const ix1 = p1.x / scaleX;
+  const iy1 = p1.y / scaleY;
+  const ix2 = p2.x / scaleX;
+  const iy2 = p2.y / scaleY;
+  const rulerPx = Math.hypot(ix2 - ix1, iy2 - iy1);
+  if (!rulerPx) return null;
+
+  // 3) converter px->cm
+  const cmPerPx = realDistCm / rulerPx;
+  return +(fishPx * cmPerPx).toFixed(1);
+};
+
+/* ========= TELA ========= */
 export default function FormularioScreen() {
   const [nome, setNome] = useState("");
   const [nomePopular, setNomePopular] = useState("");
@@ -244,13 +278,102 @@ export default function FormularioScreen() {
   const [cond, setCond] = useState(CLIMA[0]);
   const [vento, setVento] = useState(VENTO[0]);
 
-  // modal tela cheia do mapa
+  // inferência
+  const [fotoCm, setFotoCm] = useState(null);
+  const [deteccoes, setDeteccoes] = useState([]);
+  const [inferW, setInferW] = useState(null);
+  const [inferH, setInferH] = useState(null);
+  const [showDetModal, setShowDetModal] = useState(false);
+
+  // calibração
+  const [calibPts, setCalibPts] = useState([]); // [{x,y},{x,y}] no preview
+  const [realDistCm, setRealDistCm] = useState("10");
+
+  // mapa fullscreen
   const [mapFull, setMapFull] = useState(false);
 
   const nomeErro = nome.length > 0 && nome.trim().length < 2;
   const areaErro = !area;
   const cmInvalido = cm.length > 0 && (isNaN(Number(cm)) || Number(cm) <= 0);
 
+  /* ====== câmera + inferência ====== */
+  const abrirCamera = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert(
+        "Permissão",
+        "Precisamos de acesso à câmera para tirar a foto."
+      );
+      return;
+    }
+
+    const res = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.9,
+    });
+    if (res.canceled) return;
+
+    try {
+      const original = res.assets[0];
+      const resized = await ImageManipulator.manipulateAsync(
+        original.uri,
+        [{ resize: { width: 1280 } }],
+        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG }
+      );
+      setFotoCm(resized.uri);
+
+      const base64 = await FileSystem.readAsStringAsync(resized.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+
+      const endpoint =
+        `https://detect.roboflow.com/${ROBOFLOW_MODEL}/${ROBOFLOW_VERSION}` +
+        `?api_key=${ROBOFLOW_API_KEY}` +
+        `&format=json` +
+        `&confidence=0.6` +
+        `&overlap=0.5` +
+        `&classes=${encodeURIComponent(ROBOFLOW_CLASS)}`;
+
+      const inferRes = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: base64,
+      });
+
+      const raw = await inferRes.text();
+      let parsed = null;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = null;
+      }
+
+      if (!inferRes.ok) {
+        const detalhe =
+          parsed?.error || raw?.slice(0, 200) || "Erro desconhecido";
+        throw new Error(`HTTP ${inferRes.status} – ${detalhe}`);
+      }
+
+      const imgW = parsed?.image?.width ?? original.width ?? 0;
+      const imgH = parsed?.image?.height ?? original.height ?? 0;
+      setInferW(imgW);
+      setInferH(imgH);
+      setDeteccoes(
+        Array.isArray(parsed?.predictions) ? parsed.predictions : []
+      );
+      setCalibPts([]); // zera calibração pra nova foto
+      setShowDetModal(true);
+    } catch (e) {
+      Alert.alert(
+        "Detecção",
+        `Não foi possível detectar peixes.\n${String(e?.message || e)}`
+      );
+    }
+  };
+
+  /* ====== envio ====== */
   const onSubmit = async () => {
     if (areaErro || nomeErro || !nome || cmInvalido) {
       Alert.alert(
@@ -259,7 +382,6 @@ export default function FormularioScreen() {
       );
       return;
     }
-
     try {
       const payload = {
         nome,
@@ -273,20 +395,66 @@ export default function FormularioScreen() {
         isca,
         condicoes: cond,
         vento,
+        foto_cm_uri: fotoCm || null,
+        deteccoes,
       };
-
       const res = await api("/registros", {
         method: "POST",
         body: payload,
         auth: true,
       });
-
       Alert.alert("Enviado!", `Registro #${res.id} salvo com sucesso.`);
-      // opcional: limpar campos
-      // setNome(""); setNomePopular(""); setCm(""); setArea(undefined);
     } catch (e) {
       Alert.alert("Erro", String(e.message || e));
     }
+  };
+
+  /* ====== medidas de preview ====== */
+  const previewW = SCREEN_W - PADDING_X * 2;
+  const previewH = Math.round((previewW * 3) / 4); // 4:3
+  const scaleX = inferW ? previewW / inferW : 1;
+  const scaleY = inferH ? previewH / inferH : 1;
+
+  /* ====== calibração (toques) ====== */
+  const handlePreviewPress = (e) => {
+    const { locationX, locationY } = e.nativeEvent; // coords dentro do container
+    setCalibPts((old) => {
+      if (old.length >= 2) return [{ x: locationX, y: locationY }]; // recomeça
+      return [...old, { x: locationX, y: locationY }];
+    });
+  };
+
+  const aplicarCalibracao = () => {
+    if (!deteccoes?.length) {
+      Alert.alert("Calibração", "Nenhuma detecção encontrada.");
+      return;
+    }
+    if (calibPts.length < 2) {
+      Alert.alert(
+        "Calibração",
+        "Toque duas vezes na régua (ex.: 0 cm e 10 cm)."
+      );
+      return;
+    }
+    const valorReal = Number(realDistCm);
+    if (!valorReal || valorReal <= 0) {
+      Alert.alert("Calibração", "Informe a distância real em cm (ex.: 10).");
+      return;
+    }
+    const peixe = getMaiorDeteccao(deteccoes);
+    const cmEstimado = estimarComprimentoCM(
+      peixe,
+      calibPts,
+      valorReal,
+      scaleX,
+      scaleY
+    );
+    if (cmEstimado == null) {
+      Alert.alert("Calibração", "Não foi possível calcular. Tente novamente.");
+      return;
+    }
+    setCm(String(cmEstimado));
+    Alert.alert("Calibração", `Comprimento estimado: ${cmEstimado} cm`);
   };
 
   return (
@@ -320,7 +488,7 @@ export default function FormularioScreen() {
           />
         </View>
 
-        {/* Tamanho em cm */}
+        {/* CM + câmera */}
         <View style={[styles.block, cmInvalido && styles.blockError]}>
           <Text style={styles.label}>CM (tamanho)</Text>
           <View style={styles.row}>
@@ -341,13 +509,24 @@ export default function FormularioScreen() {
             >
               cm
             </Text>
+            <TouchableOpacity
+              onPress={abrirCamera}
+              style={styles.camBtn}
+              activeOpacity={0.8}
+            >
+              {fotoCm ? (
+                <Image source={{ uri: fotoCm }} style={styles.camThumb} />
+              ) : (
+                <Text style={styles.camIcon}>📷</Text>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
         {cmInvalido && (
           <Text style={styles.error}>Informe um valor numérico válido.</Text>
         )}
 
-        {/* Dropdown de Área com foto no topo (tocar -> fecha dropdown e abre fullscreen) */}
+        {/* Área com imagem */}
         <Dropdown
           label="Área"
           value={area}
@@ -358,8 +537,8 @@ export default function FormularioScreen() {
             <TouchableOpacity
               activeOpacity={0.9}
               onPress={() => {
-                close(); // fecha o dropdown primeiro
-                setTimeout(() => setMapFull(true), 0); // abre fullscreen por cima
+                close();
+                setTimeout(() => setMapFull(true), 0);
               }}
             >
               <Image
@@ -456,7 +635,145 @@ export default function FormularioScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ===== Modal tela cheia com pinch-to-zoom ===== */}
+      {/* ===== Modal Detecção + Calibração ===== */}
+      <Modal
+        visible={showDetModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDetModal(false)}
+      >
+        <View style={styles.detModalBg}>
+          <View style={styles.detSheet}>
+            <View style={styles.detHeader}>
+              <Text style={styles.detTitle}>Detecção de Peixes</Text>
+              <TouchableOpacity onPress={() => setShowDetModal(false)}>
+                <Text style={styles.closeLink}>Fechar</Text>
+              </TouchableOpacity>
+            </View>
+
+            {fotoCm ? (
+              <View style={{ alignItems: "center", marginTop: 8 }}>
+                {/* container que recebe os toques (coords relativas a preview) */}
+                <Pressable
+                  onPressOut={handlePreviewPress}
+                  style={{
+                    width: previewW,
+                    height: previewH,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Image
+                    source={{ uri: fotoCm }}
+                    style={{
+                      width: previewW,
+                      height: previewH,
+                      borderRadius: 10,
+                      position: "absolute",
+                    }}
+                    resizeMode="contain"
+                  />
+                  <Svg width={previewW} height={previewH}>
+                    {/* caixas de detecção */}
+                    {deteccoes.map((p, idx) => {
+                      const x = (p.x - p.width / 2) * scaleX;
+                      const y = (p.y - p.height / 2) * scaleY;
+                      const w = p.width * scaleX;
+                      const h = p.height * scaleY;
+                      return (
+                        <React.Fragment key={idx}>
+                          <Rect
+                            x={x}
+                            y={y}
+                            width={w}
+                            height={h}
+                            stroke="#22c55e"
+                            strokeWidth={2}
+                            fill="transparent"
+                            rx={6}
+                          />
+                          <SvgText
+                            x={x + 6}
+                            y={y + 18}
+                            fill="#22c55e"
+                            fontSize="14"
+                            fontWeight="700"
+                          >
+                            {p.class} {(p.confidence * 100).toFixed(0)}%
+                          </SvgText>
+                        </React.Fragment>
+                      );
+                    })}
+                    {/* pontos de calibração */}
+                    {calibPts.map((p, i) => (
+                      <Circle
+                        key={i}
+                        cx={p.x}
+                        cy={p.y}
+                        r={6}
+                        fill={i === 0 ? "#2563eb" : "#1d4ed8"}
+                      />
+                    ))}
+                  </Svg>
+                </Pressable>
+
+                <Text style={{ color: COLORS.subtext, marginTop: 10 }}>
+                  {deteccoes.length
+                    ? `${deteccoes.length} detecção(ões)`
+                    : "Nenhuma detecção encontrada"}
+                </Text>
+
+                {/* barra de calibração */}
+                <View style={{ width: previewW, marginTop: 12 }}>
+                  <Text style={{ color: COLORS.subtext, marginBottom: 6 }}>
+                    Toque duas vezes na régua (por exemplo 0 cm e 10 cm). Ajuste
+                    o valor se não for 10.
+                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <Text style={{ color: COLORS.text, marginRight: 8 }}>
+                      Distância real:
+                    </Text>
+                    <TextInput
+                      value={String(realDistCm)}
+                      onChangeText={setRealDistCm}
+                      keyboardType="decimal-pad"
+                      style={{
+                        width: 90,
+                        backgroundColor: "#fff",
+                        borderColor: "#dbe5f1",
+                        borderWidth: 1,
+                        borderRadius: 10,
+                        paddingHorizontal: 10,
+                        paddingVertical: 8,
+                        color: COLORS.text,
+                      }}
+                    />
+                    <Text style={{ color: COLORS.text, marginLeft: 6 }}>
+                      cm
+                    </Text>
+                    <TouchableOpacity
+                      onPress={aplicarCalibracao}
+                      style={{
+                        marginLeft: "auto",
+                        backgroundColor: "#22c55e",
+                        paddingHorizontal: 14,
+                        paddingVertical: 10,
+                        borderRadius: 12,
+                      }}
+                    >
+                      <Text style={{ color: "#fff", fontWeight: "800" }}>
+                        Calibrar e preencher
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ===== Modal mapa fullscreen ===== */}
       <Modal
         visible={mapFull}
         transparent
@@ -479,7 +796,6 @@ export default function FormularioScreen() {
               resizeMode="contain"
             />
           </ScrollView>
-
           <TouchableOpacity
             style={styles.mapCloseBtn}
             onPress={() => setMapFull(false)}
@@ -492,7 +808,7 @@ export default function FormularioScreen() {
   );
 }
 
-/* ===================== ESTILOS DA TELA ===================== */
+/* ========= Estilos ========= */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -529,6 +845,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
+  camBtn: {
+    marginLeft: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: "#E8ECF8",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#dbe5f1",
+  },
+  camIcon: { fontSize: 18, color: "#223E7C", fontWeight: "700" },
+  camThumb: { width: 38, height: 38, borderRadius: 7 },
+
   error: { color: COLORS.error, marginTop: 6 },
   cta: {
     backgroundColor: COLORS.primary,
@@ -540,7 +870,31 @@ const styles = StyleSheet.create({
   },
   ctaText: { color: "#fff", fontSize: 16, fontWeight: "800" },
 
-  // modal fullscreen do mapa
+  // modal detecção
+  detModalBg: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.25)",
+    justifyContent: "flex-end",
+  },
+  detSheet: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingBottom: 20,
+  },
+  detHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderBottomWidth: 1,
+    borderBottomColor: "#EEF2F6",
+  },
+  detTitle: { fontSize: 16, fontWeight: "800", color: COLORS.label },
+  closeLink: { color: COLORS.link, fontWeight: "700" },
+
+  // modal mapa
   mapModalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.95)" },
   mapModalImage: { width: "95%", height: "90%" },
   mapCloseBtn: {

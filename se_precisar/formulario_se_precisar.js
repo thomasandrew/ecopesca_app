@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+// src/screens/Formulario/FormularioScreen.js
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -16,21 +17,41 @@ import {
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
-import * as ImageManipulator from "expo-image-manipulator";
-// usar API legacy p/ garantir base64
 import * as FileSystem from "expo-file-system/legacy";
-import Svg, { Rect, Text as SvgText, Circle } from "react-native-svg";
 import Constants from "expo-constants";
 import { api } from "../../api";
+import Svg, { Rect, Text as SvgText } from "react-native-svg";
+// ✅ Safe areas sem depreciação
+import { SafeAreaView } from "react-native-safe-area-context";
 
-/* ========= CONFIG ROBOFLOW ========= */
-const ROBOFLOW_API_KEY =
-  Constants?.expoConfig?.extra?.ROBOFLOW_API_KEY ?? "SUA_API_KEY_AQUI";
-const ROBOFLOW_MODEL = "ecopesca_app-zpwxc"; // <- confira no Deploy
-const ROBOFLOW_VERSION = "2";
-const ROBOFLOW_CLASS = "fish";
+/* ========= CONFIG ROBOFLOW =========
+ * Modelo 1 (Peixes): "fish-types2", versão 2
+ * Modelo 2 (Bola): "orangeball-y5y61", versão 1
+ */
+const ROBOFLOW_COMMON = {
+  API_KEY:
+    Constants.expoConfig?.extra?.ROBOFLOW_API_KEY || "Toq1XAi5qwg69JrseuR5",
+  CONFIDENCE: 0.6,
+};
 
-/* ========= TEMA ========= */
+const ROBOFLOW_FISH = {
+  MODEL_SLUG:
+    Constants.expoConfig?.extra?.ROBOFLOW_FISH_MODEL || "fish-types2",
+  VERSION: Number(Constants.expoConfig?.extra?.ROBOFLOW_FISH_VERSION) || 2,
+};
+
+const ROBOFLOW_BALL = {
+  MODEL_SLUG:
+    Constants.expoConfig?.extra?.ROBOFLOW_BALL_MODEL || "orangeball-y5y61",
+  VERSION: Number(Constants.expoConfig?.extra?.ROBOFLOW_BALL_VERSION) || 1,
+  CLASS_NAME: "orange-ball",
+};
+
+// diâmetro real da bola usada como referência (cm) — AJUSTE para seu objeto real
+const REFERENCE_BALL_DIAMETER_CM =
+  Number(Constants.expoConfig?.extra?.REFERENCE_BALL_DIAMETER_CM) || 5.36;
+
+/* ===================== TEMA ===================== */
 const COLORS = {
   bg: "#F7F7F7",
   text: "#102A43",
@@ -41,8 +62,13 @@ const COLORS = {
   inputBg: "#FFFFFF",
   error: "#E25454",
   link: "#2B6CB0",
+  box: "rgba(46, 204, 64, 0.25)",
+  boxBorder: "#2ecc40",
+  boxBall: "rgba(255, 165, 0, 0.25)",
+  boxBallBorder: "#ff9800",
 };
 
+/* ===================== MAPA ===================== */
 const MAP_SOURCE = require("../../../assets/foto_areas.jpg");
 const { width: SCREEN_W } = Dimensions.get("window");
 const PADDING_X = 24;
@@ -52,7 +78,7 @@ const MAP_W = SCREEN_W - PADDING_X * 2;
 const MAP_MAX_H = 220;
 const MAP_H = Math.min(MAP_W / MAP_RATIO, MAP_MAX_H);
 
-/* ========= Dropdown simples ========= */
+/* ===================== DROPDOWN CUSTOM ===================== */
 function Dropdown({
   label,
   value,
@@ -62,9 +88,11 @@ function Dropdown({
   renderHeader,
 }) {
   const [open, setOpen] = useState(false);
+
   return (
     <View style={ddStyles.block}>
       {!!label && <Text style={ddStyles.label}>{label}</Text>}
+
       <TouchableOpacity
         style={ddStyles.input}
         onPress={() => setOpen(true)}
@@ -130,6 +158,7 @@ function Dropdown({
     </View>
   );
 }
+
 const ddStyles = StyleSheet.create({
   block: {
     backgroundColor: COLORS.inputBg,
@@ -153,6 +182,7 @@ const ddStyles = StyleSheet.create({
   },
   value: { fontSize: 16, color: COLORS.text },
   chevron: { fontSize: 18, color: COLORS.link, marginLeft: 8 },
+
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.25)",
@@ -176,6 +206,7 @@ const ddStyles = StyleSheet.create({
   },
   sheetTitle: { fontSize: 16, fontWeight: "800", color: COLORS.label },
   close: { color: COLORS.link, fontWeight: "700" },
+
   headerBox: { paddingHorizontal: 12, paddingTop: 12, paddingBottom: 8 },
   item: { paddingVertical: 14, paddingHorizontal: 16 },
   itemSelected: { backgroundColor: "#F0F5FF" },
@@ -184,7 +215,7 @@ const ddStyles = StyleSheet.create({
   sep: { height: 1, backgroundColor: "#EEF2F6" },
 });
 
-/* ========= Dados ========= */
+/* ===================== DADOS FIXOS ===================== */
 const AREAS = Array.from({ length: 10 }, (_, i) => `Área ${i + 1}`);
 const DIAS = [
   "Segunda",
@@ -234,35 +265,184 @@ const VENTO = [
   "Vento médio",
 ];
 
-/* ========= Helpers de medição ========= */
-const getMaiorDeteccao = (preds = []) =>
-  preds.reduce(
-    (best, p) =>
-      (best?.width || 0) * (best?.height || 0) > p.width * p.height ? best : p,
-    preds[0]
-  );
-
-const estimarComprimentoCM = (pred, calibPts, realDistCm, scaleX, scaleY) => {
-  if (!pred || !calibPts?.[0] || !calibPts?.[1] || !realDistCm) return null;
-
-  // 1) diagonal da caixa do peixe (em pixels da inferência)
-  const fishPx = Math.hypot(pred.width, pred.height);
-
-  // 2) distância entre os dois toques em pixels da inferência
-  const [p1, p2] = calibPts; // pontos no preview
-  const ix1 = p1.x / scaleX;
-  const iy1 = p1.y / scaleY;
-  const ix2 = p2.x / scaleX;
-  const iy2 = p2.y / scaleY;
-  const rulerPx = Math.hypot(ix2 - ix1, iy2 - iy1);
-  if (!rulerPx) return null;
-
-  // 3) converter px->cm
-  const cmPerPx = realDistCm / rulerPx;
-  return +(fishPx * cmPerPx).toFixed(1);
+/* ===================== HELPERS (permissões & compat) ===================== */
+// compat: MediaType novo (SDKs recentes) ou MediaTypeOptions (antigos)
+const getImagesMediaTypes = () => {
+  if (ImagePicker?.MediaType) return [ImagePicker.MediaType.Images];
+  return ImagePicker.MediaTypeOptions?.Images ?? undefined;
 };
 
-/* ========= TELA ========= */
+async function ensurePermission(kind) {
+  if (kind === "camera") {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert(
+        "Permissão de Câmera",
+        "A câmera está bloqueada. Abra as Configurações do aparelho e permita o acesso."
+      );
+      return false;
+    }
+    return true;
+  }
+  if (kind === "library") {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert(
+        "Permissão de Fotos",
+        "O app não tem acesso às fotos. Abra as Configurações do aparelho e permita o acesso."
+      );
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+/* ===================== AUXILIARES ===================== */
+function combinePredictions(predFish = [], predBall = []) {
+  return [
+    ...predFish.map((p) => ({ ...p, __src: "fish" })),
+    ...predBall.map((p) => ({ ...p, __src: "ball" })),
+  ];
+}
+function longestSide(pxW, pxH) {
+  return Math.max(pxW, pxH);
+}
+function estimateFishSizeCm(predFish = [], predBall = []) {
+  if (!predFish.length || !predBall.length) return null;
+  const bestBall =
+    predBall.slice().sort((a, b) => b.confidence - a.confidence)[0] || null;
+  if (!bestBall) return null;
+
+  const ballPx = longestSide(bestBall.width, bestBall.height);
+  if (!ballPx || REFERENCE_BALL_DIAMETER_CM <= 0) return null;
+
+  const pxPerCm = ballPx / REFERENCE_BALL_DIAMETER_CM;
+  const bestFish =
+    predFish
+      .slice()
+      .sort(
+        (a, b) =>
+          longestSide(b.width, b.height) - longestSide(a.width, a.height)
+      )[0] || null;
+  if (!bestFish) return null;
+
+  const fishPx = longestSide(bestFish.width, bestFish.height);
+  return fishPx / pxPerCm;
+}
+
+/* ===================== PREVIEW ===================== */
+function PreviewFoto({
+  uri,
+  predicoes,
+  onLayoutSize,
+  imgSizeOriginal,
+  larguraDesejada,
+}) {
+  const [scaledH, setScaledH] = useState(0);
+
+  useEffect(() => {
+    if (!uri) return;
+    Image.getSize(
+      uri,
+      (w, h) => {
+        if (onLayoutSize) onLayoutSize({ w, h });
+        const escala = larguraDesejada / w;
+        setScaledH(h * escala);
+      },
+      (err) => console.log("Erro getSize:", err)
+    );
+  }, [uri, larguraDesejada]);
+
+  const renderBoxes = () => {
+    if (
+      !predicoes ||
+      predicoes.length === 0 ||
+      !imgSizeOriginal?.w ||
+      !imgSizeOriginal?.h
+    )
+      return null;
+
+    const escala = larguraDesejada / imgSizeOriginal.w;
+
+    return predicoes.map((p, idx) => {
+      const left = (p.x - p.width / 2) * escala;
+      const top = (p.y - p.height / 2) * escala;
+      const boxW = p.width * escala;
+      const boxH = p.height * escala;
+      const isBall = p.__src === "ball" || p.class === ROBOFLOW_BALL.CLASS_NAME;
+
+      return (
+        <React.Fragment key={idx}>
+          <Rect
+            x={left}
+            y={top}
+            width={boxW}
+            height={boxH}
+            stroke={isBall ? COLORS.boxBallBorder : COLORS.boxBorder}
+            strokeWidth={2}
+            fill={isBall ? COLORS.boxBall : COLORS.box}
+            rx={4}
+            ry={4}
+          />
+          <SvgText
+            x={left + 4}
+            y={top + 16}
+            fill={isBall ? COLORS.boxBallBorder : COLORS.boxBorder}
+            fontWeight="bold"
+            fontSize="12"
+          >
+            {`${p.class} ${Math.round(p.confidence * 100)}%`}
+          </SvgText>
+        </React.Fragment>
+      );
+    });
+  };
+
+  if (!uri) return null;
+
+  return (
+    <View style={{ marginTop: 10 }}>
+      <View
+        style={{
+          width: larguraDesejada,
+          height: scaledH,
+          borderRadius: 8,
+          overflow: "hidden",
+          backgroundColor: "#000",
+        }}
+      >
+        <Image
+          source={{ uri }}
+          style={{ width: "100%", height: "100%", position: "absolute" }}
+          resizeMode="cover"
+        />
+        <Svg
+          width={larguraDesejada}
+          height={scaledH}
+          style={{ position: "absolute", left: 0, top: 0 }}
+        >
+          {renderBoxes()}
+        </Svg>
+      </View>
+
+      {(!predicoes || predicoes.length === 0) && (
+        <Text
+          style={{
+            color: COLORS.subtext,
+            marginTop: 10,
+            fontSize: 16,
+            fontWeight: "500",
+          }}
+        >
+          Nada detectado.
+        </Text>
+      )}
+    </View>
+  );
+}
+
+/* ===================== TELA ===================== */
 export default function FormularioScreen() {
   const [nome, setNome] = useState("");
   const [nomePopular, setNomePopular] = useState("");
@@ -278,102 +458,138 @@ export default function FormularioScreen() {
   const [cond, setCond] = useState(CLIMA[0]);
   const [vento, setVento] = useState(VENTO[0]);
 
-  // inferência
-  const [fotoCm, setFotoCm] = useState(null);
-  const [deteccoes, setDeteccoes] = useState([]);
-  const [inferW, setInferW] = useState(null);
-  const [inferH, setInferH] = useState(null);
-  const [showDetModal, setShowDetModal] = useState(false);
+  const [fotoUri, setFotoUri] = useState(null);
+  const [fotoOrigem, setFotoOrigem] = useState(null);
 
-  // calibração
-  const [calibPts, setCalibPts] = useState([]); // [{x,y},{x,y}] no preview
-  const [realDistCm, setRealDistCm] = useState("10");
+  const [predicoes, setPredicoes] = useState([]);
+  const [imgSizeOriginal, setImgSizeOriginal] = useState(null);
 
-  // mapa fullscreen
   const [mapFull, setMapFull] = useState(false);
 
   const nomeErro = nome.length > 0 && nome.trim().length < 2;
   const areaErro = !area;
   const cmInvalido = cm.length > 0 && (isNaN(Number(cm)) || Number(cm) <= 0);
 
-  /* ====== câmera + inferência ====== */
-  const abrirCamera = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert(
-        "Permissão",
-        "Precisamos de acesso à câmera para tirar a foto."
-      );
-      return;
-    }
+  // chama 2 modelos em paralelo
+  const runRoboflowBoth = async (base64) => {
+    const qs = (slug, ver) =>
+      `https://serverless.roboflow.com/${slug}/${ver}?api_key=${ROBOFLOW_COMMON.API_KEY}&confidence=${ROBOFLOW_COMMON.CONFIDENCE}`;
+    const headers = { "Content-Type": "application/x-www-form-urlencoded" };
 
-    const res = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.9,
-    });
-    if (res.canceled) return;
-
-    try {
-      const original = res.assets[0];
-      const resized = await ImageManipulator.manipulateAsync(
-        original.uri,
-        [{ resize: { width: 1280 } }],
-        { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG }
-      );
-      setFotoCm(resized.uri);
-
-      const base64 = await FileSystem.readAsStringAsync(resized.uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      const endpoint =
-        `https://detect.roboflow.com/${ROBOFLOW_MODEL}/${ROBOFLOW_VERSION}` +
-        `?api_key=${ROBOFLOW_API_KEY}` +
-        `&format=json` +
-        `&confidence=0.6` +
-        `&overlap=0.5` +
-        `&classes=${encodeURIComponent(ROBOFLOW_CLASS)}`;
-
-      const inferRes = await fetch(endpoint, {
+    const [fishRes, ballRes] = await Promise.all([
+      fetch(qs(ROBOFLOW_FISH.MODEL_SLUG, ROBOFLOW_FISH.VERSION), {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        headers,
         body: base64,
+      }),
+      fetch(qs(ROBOFLOW_BALL.MODEL_SLUG, ROBOFLOW_BALL.VERSION), {
+        method: "POST",
+        headers,
+        body: base64,
+      }),
+    ]);
+
+    const fishJson = await fishRes.json().catch(() => ({}));
+    const ballJson = await ballRes.json().catch(() => ({}));
+
+    const fishPred =
+      (Array.isArray(fishJson?.predictions) ? fishJson.predictions : []).filter(
+        (p) => p.confidence >= ROBOFLOW_COMMON.CONFIDENCE
+      );
+    const ballPred =
+      (Array.isArray(ballJson?.predictions) ? ballJson.predictions : []).filter(
+        (p) => p.confidence >= ROBOFLOW_COMMON.CONFIDENCE
+      );
+
+    const fishLabeled = fishPred.map((p) => ({ ...p, __src: "fish" }));
+    const ballLabeled = ballPred.map((p) => ({ ...p, __src: "ball" }));
+    return { fish: fishLabeled, ball: ballLabeled };
+  };
+
+  const rodarDeteccao = async (uri) => {
+    try {
+      const imageBase64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: "base64",
       });
 
-      const raw = await inferRes.text();
-      let parsed = null;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        parsed = null;
+      const { fish, ball } = await runRoboflowBoth(imageBase64);
+
+      const autoCm = estimateFishSizeCm(fish, ball);
+      if (autoCm && (!cm || Number(cm) === 0)) {
+        setCm(String(Math.round(autoCm * 100) / 100));
       }
 
-      if (!inferRes.ok) {
-        const detalhe =
-          parsed?.error || raw?.slice(0, 200) || "Erro desconhecido";
-        throw new Error(`HTTP ${inferRes.status} – ${detalhe}`);
-      }
-
-      const imgW = parsed?.image?.width ?? original.width ?? 0;
-      const imgH = parsed?.image?.height ?? original.height ?? 0;
-      setInferW(imgW);
-      setInferH(imgH);
-      setDeteccoes(
-        Array.isArray(parsed?.predictions) ? parsed.predictions : []
-      );
-      setCalibPts([]); // zera calibração pra nova foto
-      setShowDetModal(true);
-    } catch (e) {
-      Alert.alert(
-        "Detecção",
-        `Não foi possível detectar peixes.\n${String(e?.message || e)}`
-      );
+      setPredicoes(combinePredictions(fish, ball));
+    } catch (err) {
+      console.log("Erro Roboflow:", err);
+      Alert.alert("Erro Roboflow", String(err));
+      setPredicoes([]);
     }
   };
 
-  /* ====== envio ====== */
+  // === abrir câmera ===
+  const abrirCamera = async () => {
+    try {
+      if (Platform.OS === "web") {
+        Alert.alert(
+          "Não suportado",
+          "A câmera não abre no web preview. Teste no celular (Expo Go)."
+        );
+        return;
+      }
+
+      const ok = await ensurePermission("camera");
+      if (!ok) return;
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: getImagesMediaTypes(),
+        quality: 0.8,
+        exif: false,
+        allowsEditing: false,
+      });
+
+      if (!result?.canceled) {
+        const uri = result.assets?.[0]?.uri;
+        if (!uri) throw new Error("Sem URI da foto.");
+        setFotoUri(uri);
+        setFotoOrigem("camera");
+        setPredicoes([]);
+        await rodarDeteccao(uri);
+      }
+    } catch (e) {
+      console.log("abrirCamera error:", e);
+      Alert.alert("Câmera", String(e?.message || e));
+    }
+  };
+
+  // === abrir galeria ===
+  const abrirGaleria = async () => {
+    try {
+      const ok = await ensurePermission("library");
+      if (!ok) return;
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: getImagesMediaTypes(),
+        quality: 0.9,
+        allowsEditing: false,
+        exif: false,
+        selectionLimit: 1,
+      });
+
+      if (!result?.canceled) {
+        const uri = result.assets?.[0]?.uri;
+        if (!uri) throw new Error("Sem URI da imagem selecionada.");
+        setFotoUri(uri);
+        setFotoOrigem("galeria");
+        setPredicoes([]);
+        await rodarDeteccao(uri);
+      }
+    } catch (e) {
+      console.log("abrirGaleria error:", e);
+      Alert.alert("Galeria", String(e?.message || e));
+    }
+  };
+
   const onSubmit = async () => {
     if (areaErro || nomeErro || !nome || cmInvalido) {
       Alert.alert(
@@ -382,6 +598,7 @@ export default function FormularioScreen() {
       );
       return;
     }
+
     try {
       const payload = {
         nome,
@@ -395,426 +612,266 @@ export default function FormularioScreen() {
         isca,
         condicoes: cond,
         vento,
-        foto_cm_uri: fotoCm || null,
-        deteccoes,
+        foto_uri: fotoUri || null,
+        foto_origem: fotoOrigem || null,
+        deteccoes: predicoes,
+        referencia_bola_cm: REFERENCE_BALL_DIAMETER_CM,
       };
+
       const res = await api("/registros", {
         method: "POST",
         body: payload,
         auth: true,
       });
+
       Alert.alert("Enviado!", `Registro #${res.id} salvo com sucesso.`);
     } catch (e) {
       Alert.alert("Erro", String(e.message || e));
     }
   };
 
-  /* ====== medidas de preview ====== */
-  const previewW = SCREEN_W - PADDING_X * 2;
-  const previewH = Math.round((previewW * 3) / 4); // 4:3
-  const scaleX = inferW ? previewW / inferW : 1;
-  const scaleY = inferH ? previewH / inferH : 1;
-
-  /* ====== calibração (toques) ====== */
-  const handlePreviewPress = (e) => {
-    const { locationX, locationY } = e.nativeEvent; // coords dentro do container
-    setCalibPts((old) => {
-      if (old.length >= 2) return [{ x: locationX, y: locationY }]; // recomeça
-      return [...old, { x: locationX, y: locationY }];
-    });
-  };
-
-  const aplicarCalibracao = () => {
-    if (!deteccoes?.length) {
-      Alert.alert("Calibração", "Nenhuma detecção encontrada.");
-      return;
-    }
-    if (calibPts.length < 2) {
-      Alert.alert(
-        "Calibração",
-        "Toque duas vezes na régua (ex.: 0 cm e 10 cm)."
-      );
-      return;
-    }
-    const valorReal = Number(realDistCm);
-    if (!valorReal || valorReal <= 0) {
-      Alert.alert("Calibração", "Informe a distância real em cm (ex.: 10).");
-      return;
-    }
-    const peixe = getMaiorDeteccao(deteccoes);
-    const cmEstimado = estimarComprimentoCM(
-      peixe,
-      calibPts,
-      valorReal,
-      scaleX,
-      scaleY
-    );
-    if (cmEstimado == null) {
-      Alert.alert("Calibração", "Não foi possível calcular. Tente novamente.");
-      return;
-    }
-    setCm(String(cmEstimado));
-    Alert.alert("Calibração", `Comprimento estimado: ${cmEstimado} cm`);
-  };
-
   return (
-    <ScrollView>
-      <View style={styles.container}>
-        <Text style={styles.title}>Formulário</Text>
-        <Text style={styles.subtitle}>Registre as informações</Text>
+    // ✅ SafeAreaView da lib react-native-safe-area-context (sem warning)
+    <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
+      <ScrollView>
+        <View style={styles.container}>
+          <Text style={styles.title}>Formulário</Text>
+          <Text style={styles.subtitle}>Registre as informações</Text>
 
-        {/* Nome */}
-        <View style={[styles.block, nomeErro && styles.blockError]}>
-          <Text style={styles.label}>Nome</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Digite o nome"
-            placeholderTextColor="#9AA6B2"
-            value={nome}
-            onChangeText={setNome}
-          />
-        </View>
-        {nomeErro && <Text style={styles.error}>Mínimo de 2 caracteres.</Text>}
-
-        {/* Nome popular */}
-        <View style={styles.block}>
-          <Text style={styles.label}>Nome popular</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Ex.: Robalo, Tainha..."
-            placeholderTextColor="#9AA6B2"
-            value={nomePopular}
-            onChangeText={setNomePopular}
-          />
-        </View>
-
-        {/* CM + câmera */}
-        <View style={[styles.block, cmInvalido && styles.blockError]}>
-          <Text style={styles.label}>CM (tamanho)</Text>
-          <View style={styles.row}>
+          {/* Nome */}
+          <View style={[styles.block, nomeErro && styles.blockError]}>
+            <Text style={styles.label}>Nome</Text>
             <TextInput
-              style={[styles.input, { flex: 1 }]}
-              placeholder="0"
+              style={styles.input}
+              placeholder="Digite o nome"
               placeholderTextColor="#9AA6B2"
-              keyboardType="decimal-pad"
-              value={cm}
-              onChangeText={setCm}
+              value={nome}
+              onChangeText={setNome}
             />
-            <Text
-              style={{
-                color: COLORS.subtext,
-                marginLeft: 8,
-                fontWeight: "700",
-              }}
-            >
-              cm
+          </View>
+          {nomeErro && (
+            <Text style={styles.error}>Mínimo de 2 caracteres.</Text>
+          )}
+
+          {/* Nome popular */}
+          <View style={styles.block}>
+            <Text style={styles.label}>Nome popular</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ex.: Robalo, Tainha..."
+              placeholderTextColor="#9AA6B2"
+              value={nomePopular}
+              onChangeText={setNomePopular}
+            />
+          </View>
+
+          {/* Tamanho + botões */}
+          <View style={[styles.block, cmInvalido && styles.blockError]}>
+            <Text style={styles.label}>CM (tamanho)</Text>
+
+            <View style={styles.row}>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                placeholder="0"
+                placeholderTextColor="#9AA6B2"
+                keyboardType="decimal-pad"
+                value={cm}
+                onChangeText={setCm}
+              />
+
+              <Text
+                style={{
+                  color: COLORS.subtext,
+                  marginLeft: 8,
+                  fontWeight: "700",
+                }}
+              >
+                cm
+              </Text>
+
+              {/* Galeria */}
+              <TouchableOpacity
+                onPress={abrirGaleria}
+                activeOpacity={0.9}
+                style={styles.camBtn}
+              >
+                <Text style={styles.camIcon}>🖼️</Text>
+              </TouchableOpacity>
+
+              {/* Câmera */}
+              <TouchableOpacity
+                onPress={abrirCamera}
+                activeOpacity={0.9}
+                style={[styles.camBtn, { marginLeft: 8 }]}
+              >
+                <Text style={styles.camIcon}>📷</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Preview */}
+            {fotoUri ? (
+              <PreviewFoto
+                uri={fotoUri}
+                predicoes={predicoes}
+                imgSizeOriginal={imgSizeOriginal}
+                onLayoutSize={(size) => setImgSizeOriginal(size)}
+                larguraDesejada={SCREEN_W - PADDING_X * 2 - 20}
+              />
+            ) : null}
+
+            <Text style={{ marginTop: 8, color: COLORS.subtext }}>
+              Referência: bola = {REFERENCE_BALL_DIAMETER_CM} cm. Ajuste em
+              REFERENCE_BALL_DIAMETER_CM.
             </Text>
+          </View>
+          {cmInvalido && (
+            <Text style={styles.error}>Informe um valor numérico válido.</Text>
+          )}
+
+          {/* Área com mapa */}
+          <Dropdown
+            label="Área"
+            value={area}
+            onChange={setArea}
+            options={AREAS}
+            placeholder="Selecione..."
+            renderHeader={(close) => (
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => {
+                  close();
+                  setTimeout(() => setMapFull(true), 0);
+                }}
+              >
+                <Image
+                  source={MAP_SOURCE}
+                  style={{
+                    width: MAP_W,
+                    height: MAP_H,
+                    alignSelf: "center",
+                    borderRadius: 12,
+                  }}
+                  resizeMode="contain"
+                />
+                <Text
+                  style={{
+                    textAlign: "center",
+                    color: COLORS.link,
+                    marginTop: 6,
+                    fontWeight: "700",
+                  }}
+                >
+                  Tocar para ver em tela cheia
+                </Text>
+              </TouchableOpacity>
+            )}
+          />
+
+          {/* Data */}
+          <View style={styles.block}>
+            <Text style={styles.label}>Data</Text>
             <TouchableOpacity
-              onPress={abrirCamera}
-              style={styles.camBtn}
+              onPress={() => setMostrarData(true)}
+              style={[styles.input, styles.dateBtn]}
               activeOpacity={0.8}
             >
-              {fotoCm ? (
-                <Image source={{ uri: fotoCm }} style={styles.camThumb} />
-              ) : (
-                <Text style={styles.camIcon}>📷</Text>
-              )}
+              <Text style={{ color: COLORS.text }}>
+                {data.toLocaleDateString()}
+              </Text>
+              <Text style={{ color: COLORS.link, fontWeight: "700" }}>
+                Alterar
+              </Text>
             </TouchableOpacity>
+            {mostrarData && (
+              <DateTimePicker
+                value={data}
+                mode="date"
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                onChange={(_, d) => {
+                  setMostrarData(false);
+                  if (d) setData(d);
+                }}
+              />
+            )}
           </View>
-        </View>
-        {cmInvalido && (
-          <Text style={styles.error}>Informe um valor numérico válido.</Text>
-        )}
 
-        {/* Área com imagem */}
-        <Dropdown
-          label="Área"
-          value={area}
-          onChange={setArea}
-          options={AREAS}
-          placeholder="Selecione..."
-          renderHeader={(close) => (
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={() => {
-                close();
-                setTimeout(() => setMapFull(true), 0);
+          {/* Demais dropdowns */}
+          <Dropdown label="Dia" value={dia} onChange={setDia} options={DIAS} />
+          <Dropdown
+            label="Turno"
+            value={turno}
+            onChange={setTurno}
+            options={TURNOS}
+          />
+          <Dropdown
+            label="Equipamento"
+            value={equip}
+            onChange={setEquip}
+            options={EQUIPAMENTOS}
+          />
+          <Dropdown label="Isca" value={isca} onChange={setIsca} options={ISCAs} />
+          <Dropdown
+            label="Condições climáticas"
+            value={cond}
+            onChange={setCond}
+            options={CLIMA}
+          />
+          <Dropdown
+            label="Vento"
+            value={vento}
+            onChange={setVento}
+            options={VENTO}
+          />
+
+          <TouchableOpacity style={styles.cta} onPress={onSubmit} activeOpacity={0.9}>
+            <Text style={styles.ctaText}>Enviar</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ===== Modal tela cheia com pinch-to-zoom ===== */}
+        <Modal
+          visible={mapFull}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setMapFull(false)}
+        >
+          <Pressable style={styles.mapModalBg} onPress={() => setMapFull(false)}>
+            <ScrollView
+              maximumZoomScale={3}
+              minimumZoomScale={1}
+              contentContainerStyle={{
+                flexGrow: 1,
+                justifyContent: "center",
+                alignItems: "center",
               }}
             >
               <Image
                 source={MAP_SOURCE}
-                style={{
-                  width: MAP_W,
-                  height: MAP_H,
-                  alignSelf: "center",
-                  borderRadius: 12,
-                }}
+                style={styles.mapModalImage}
                 resizeMode="contain"
               />
-              <Text
-                style={{
-                  textAlign: "center",
-                  color: COLORS.link,
-                  marginTop: 6,
-                  fontWeight: "700",
-                }}
-              >
-                Tocar para ver em tela cheia
-              </Text>
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.mapCloseBtn}
+              onPress={() => setMapFull(false)}
+            >
+              <Text style={styles.mapCloseText}>Fechar</Text>
             </TouchableOpacity>
-          )}
-        />
-
-        {/* Data */}
-        <View style={styles.block}>
-          <Text style={styles.label}>Data</Text>
-          <TouchableOpacity
-            onPress={() => setMostrarData(true)}
-            style={[styles.input, styles.dateBtn]}
-            activeOpacity={0.8}
-          >
-            <Text style={{ color: COLORS.text }}>
-              {data.toLocaleDateString()}
-            </Text>
-            <Text style={{ color: COLORS.link, fontWeight: "700" }}>
-              Alterar
-            </Text>
-          </TouchableOpacity>
-          {mostrarData && (
-            <DateTimePicker
-              value={data}
-              mode="date"
-              display={Platform.OS === "ios" ? "spinner" : "default"}
-              onChange={(_, d) => {
-                setMostrarData(false);
-                if (d) setData(d);
-              }}
-            />
-          )}
-        </View>
-
-        {/* Demais dropdowns */}
-        <Dropdown label="Dia" value={dia} onChange={setDia} options={DIAS} />
-        <Dropdown
-          label="Turno"
-          value={turno}
-          onChange={setTurno}
-          options={TURNOS}
-        />
-        <Dropdown
-          label="Equipamento"
-          value={equip}
-          onChange={setEquip}
-          options={EQUIPAMENTOS}
-        />
-        <Dropdown
-          label="Isca"
-          value={isca}
-          onChange={setIsca}
-          options={ISCAs}
-        />
-        <Dropdown
-          label="Condições climáticas"
-          value={cond}
-          onChange={setCond}
-          options={CLIMA}
-        />
-        <Dropdown
-          label="Vento"
-          value={vento}
-          onChange={setVento}
-          options={VENTO}
-        />
-
-        <TouchableOpacity
-          style={styles.cta}
-          onPress={onSubmit}
-          activeOpacity={0.9}
-        >
-          <Text style={styles.ctaText}>Enviar</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ===== Modal Detecção + Calibração ===== */}
-      <Modal
-        visible={showDetModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowDetModal(false)}
-      >
-        <View style={styles.detModalBg}>
-          <View style={styles.detSheet}>
-            <View style={styles.detHeader}>
-              <Text style={styles.detTitle}>Detecção de Peixes</Text>
-              <TouchableOpacity onPress={() => setShowDetModal(false)}>
-                <Text style={styles.closeLink}>Fechar</Text>
-              </TouchableOpacity>
-            </View>
-
-            {fotoCm ? (
-              <View style={{ alignItems: "center", marginTop: 8 }}>
-                {/* container que recebe os toques (coords relativas a preview) */}
-                <Pressable
-                  onPressOut={handlePreviewPress}
-                  style={{
-                    width: previewW,
-                    height: previewH,
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Image
-                    source={{ uri: fotoCm }}
-                    style={{
-                      width: previewW,
-                      height: previewH,
-                      borderRadius: 10,
-                      position: "absolute",
-                    }}
-                    resizeMode="contain"
-                  />
-                  <Svg width={previewW} height={previewH}>
-                    {/* caixas de detecção */}
-                    {deteccoes.map((p, idx) => {
-                      const x = (p.x - p.width / 2) * scaleX;
-                      const y = (p.y - p.height / 2) * scaleY;
-                      const w = p.width * scaleX;
-                      const h = p.height * scaleY;
-                      return (
-                        <React.Fragment key={idx}>
-                          <Rect
-                            x={x}
-                            y={y}
-                            width={w}
-                            height={h}
-                            stroke="#22c55e"
-                            strokeWidth={2}
-                            fill="transparent"
-                            rx={6}
-                          />
-                          <SvgText
-                            x={x + 6}
-                            y={y + 18}
-                            fill="#22c55e"
-                            fontSize="14"
-                            fontWeight="700"
-                          >
-                            {p.class} {(p.confidence * 100).toFixed(0)}%
-                          </SvgText>
-                        </React.Fragment>
-                      );
-                    })}
-                    {/* pontos de calibração */}
-                    {calibPts.map((p, i) => (
-                      <Circle
-                        key={i}
-                        cx={p.x}
-                        cy={p.y}
-                        r={6}
-                        fill={i === 0 ? "#2563eb" : "#1d4ed8"}
-                      />
-                    ))}
-                  </Svg>
-                </Pressable>
-
-                <Text style={{ color: COLORS.subtext, marginTop: 10 }}>
-                  {deteccoes.length
-                    ? `${deteccoes.length} detecção(ões)`
-                    : "Nenhuma detecção encontrada"}
-                </Text>
-
-                {/* barra de calibração */}
-                <View style={{ width: previewW, marginTop: 12 }}>
-                  <Text style={{ color: COLORS.subtext, marginBottom: 6 }}>
-                    Toque duas vezes na régua (por exemplo 0 cm e 10 cm). Ajuste
-                    o valor se não for 10.
-                  </Text>
-                  <View style={{ flexDirection: "row", alignItems: "center" }}>
-                    <Text style={{ color: COLORS.text, marginRight: 8 }}>
-                      Distância real:
-                    </Text>
-                    <TextInput
-                      value={String(realDistCm)}
-                      onChangeText={setRealDistCm}
-                      keyboardType="decimal-pad"
-                      style={{
-                        width: 90,
-                        backgroundColor: "#fff",
-                        borderColor: "#dbe5f1",
-                        borderWidth: 1,
-                        borderRadius: 10,
-                        paddingHorizontal: 10,
-                        paddingVertical: 8,
-                        color: COLORS.text,
-                      }}
-                    />
-                    <Text style={{ color: COLORS.text, marginLeft: 6 }}>
-                      cm
-                    </Text>
-                    <TouchableOpacity
-                      onPress={aplicarCalibracao}
-                      style={{
-                        marginLeft: "auto",
-                        backgroundColor: "#22c55e",
-                        paddingHorizontal: 14,
-                        paddingVertical: 10,
-                        borderRadius: 12,
-                      }}
-                    >
-                      <Text style={{ color: "#fff", fontWeight: "800" }}>
-                        Calibrar e preencher
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            ) : null}
-          </View>
-        </View>
-      </Modal>
-
-      {/* ===== Modal mapa fullscreen ===== */}
-      <Modal
-        visible={mapFull}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setMapFull(false)}
-      >
-        <Pressable style={styles.mapModalBg} onPress={() => setMapFull(false)}>
-          <ScrollView
-            maximumZoomScale={3}
-            minimumZoomScale={1}
-            contentContainerStyle={{
-              flexGrow: 1,
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            <Image
-              source={MAP_SOURCE}
-              style={styles.mapModalImage}
-              resizeMode="contain"
-            />
-          </ScrollView>
-          <TouchableOpacity
-            style={styles.mapCloseBtn}
-            onPress={() => setMapFull(false)}
-          >
-            <Text style={styles.mapCloseText}>Fechar</Text>
-          </TouchableOpacity>
-        </Pressable>
-      </Modal>
-    </ScrollView>
+          </Pressable>
+        </Modal>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
-/* ========= Estilos ========= */
+/* ===================== ESTILOS ===================== */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.bg,
     paddingHorizontal: PADDING_X,
-    paddingTop: 80,
+    paddingTop: 16, // padding reduzido pois SafeAreaView já cuida do topo
   },
   title: { fontSize: 28, fontWeight: "800", color: COLORS.label },
   subtitle: { color: COLORS.subtext, marginTop: 4, marginBottom: 14 },
@@ -847,17 +904,14 @@ const styles = StyleSheet.create({
 
   camBtn: {
     marginLeft: 10,
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: "#E8ECF8",
-    alignItems: "center",
-    justifyContent: "center",
+    backgroundColor: "#F2F6FF",
     borderWidth: 1,
-    borderColor: "#dbe5f1",
+    borderColor: "#D9E4FF",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
   },
-  camIcon: { fontSize: 18, color: "#223E7C", fontWeight: "700" },
-  camThumb: { width: 38, height: 38, borderRadius: 7 },
+  camIcon: { fontSize: 16, color: COLORS.link, fontWeight: "800" },
 
   error: { color: COLORS.error, marginTop: 6 },
   cta: {
@@ -870,31 +924,6 @@ const styles = StyleSheet.create({
   },
   ctaText: { color: "#fff", fontSize: 16, fontWeight: "800" },
 
-  // modal detecção
-  detModalBg: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.25)",
-    justifyContent: "flex-end",
-  },
-  detSheet: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingBottom: 20,
-  },
-  detHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderBottomWidth: 1,
-    borderBottomColor: "#EEF2F6",
-  },
-  detTitle: { fontSize: 16, fontWeight: "800", color: COLORS.label },
-  closeLink: { color: COLORS.link, fontWeight: "700" },
-
-  // modal mapa
   mapModalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.95)" },
   mapModalImage: { width: "95%", height: "90%" },
   mapCloseBtn: {

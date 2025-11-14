@@ -26,12 +26,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 /* ========= CONFIG ROBOFLOW =========
  * Modelo 1 (Peixes): "fish-types2", versão 2
- * Modelo 2 (Bola): "orangeball-y5y61", versão 1
+ * Modelo 2 (Bola): "golf-ball-detector-orange", versão 3, classe "orange-golf-ball"
  */
 const ROBOFLOW_COMMON = {
   API_KEY:
     Constants.expoConfig?.extra?.ROBOFLOW_API_KEY || "Toq1XAi5qwg69JrseuR5",
-  CONFIDENCE: 0.6,
+  // Confiança mais baixa para facilitar os testes de detecção
+  CONFIDENCE: 0.3,
 };
 
 const ROBOFLOW_FISH = {
@@ -40,16 +41,20 @@ const ROBOFLOW_FISH = {
   VERSION: Number(Constants.expoConfig?.extra?.ROBOFLOW_FISH_VERSION) || 2,
 };
 
+// ✅ Novo modelo da bola (Roboflow Universe - Golf Ball Detector Orange)
 const ROBOFLOW_BALL = {
   MODEL_SLUG:
-    Constants.expoConfig?.extra?.ROBOFLOW_BALL_MODEL || "orangeball-y5y61",
-  VERSION: Number(Constants.expoConfig?.extra?.ROBOFLOW_BALL_VERSION) || 1,
-  CLASS_NAME: "orange-ball",
+    Constants.expoConfig?.extra?.ROBOFLOW_BALL_MODEL ||
+    "golf-ball-detector-orange",
+  VERSION: Number(Constants.expoConfig?.extra?.ROBOFLOW_BALL_VERSION) || 3,
+  // nome da classe no dataset: orange-golf-ball
+  CLASS_NAME: "orange-golf-ball",
 };
 
 // diâmetro real da bola usada como referência (cm) — AJUSTE para seu objeto real
+// padrão: bola de golfe oficial (FishTechy usa isso): 4.268 cm
 const REFERENCE_BALL_DIAMETER_CM =
-  Number(Constants.expoConfig?.extra?.REFERENCE_BALL_DIAMETER_CM) || 5.36;
+  Number(Constants.expoConfig?.extra?.REFERENCE_BALL_DIAMETER_CM) || 4.268;
 
 /* ===================== TEMA ===================== */
 const COLORS = {
@@ -370,7 +375,8 @@ function PreviewFoto({
       const top = (p.y - p.height / 2) * escala;
       const boxW = p.width * escala;
       const boxH = p.height * escala;
-      const isBall = p.__src === "ball" || p.class === ROBOFLOW_BALL.CLASS_NAME;
+      const isBall =
+        p.__src === "ball" || p.class === ROBOFLOW_BALL.CLASS_NAME;
 
       return (
         <React.Fragment key={idx}>
@@ -491,6 +497,10 @@ export default function FormularioScreen() {
 
     const fishJson = await fishRes.json().catch(() => ({}));
     const ballJson = await ballRes.json().catch(() => ({}));
+
+    // logs para depurar a resposta dos modelos
+    console.log("FISH JSON =>", fishJson);
+    console.log("BALL JSON =>", ballJson);
 
     const fishPred =
       (Array.isArray(fishJson?.predictions) ? fishJson.predictions : []).filter(
@@ -720,8 +730,7 @@ export default function FormularioScreen() {
             ) : null}
 
             <Text style={{ marginTop: 8, color: COLORS.subtext }}>
-              Referência: bola = {REFERENCE_BALL_DIAMETER_CM} cm. Ajuste em
-              REFERENCE_BALL_DIAMETER_CM.
+              Referência: bola = {REFERENCE_BALL_DIAMETER_CM} cm.
             </Text>
           </View>
           {cmInvalido && (
@@ -823,7 +832,11 @@ export default function FormularioScreen() {
             options={VENTO}
           />
 
-          <TouchableOpacity style={styles.cta} onPress={onSubmit} activeOpacity={0.9}>
+          <TouchableOpacity
+            style={styles.cta}
+            onPress={onSubmit}
+            activeOpacity={0.9}
+          >
             <Text style={styles.ctaText}>Enviar</Text>
           </TouchableOpacity>
         </View>
@@ -835,7 +848,10 @@ export default function FormularioScreen() {
           animationType="fade"
           onRequestClose={() => setMapFull(false)}
         >
-          <Pressable style={styles.mapModalBg} onPress={() => setMapFull(false)}>
+          <Pressable
+            style={styles.mapModalBg}
+            onPress={() => setMapFull(false)}
+          >
             <ScrollView
               maximumZoomScale={3}
               minimumZoomScale={1}

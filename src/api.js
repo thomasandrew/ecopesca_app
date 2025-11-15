@@ -2,7 +2,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // src/api.js
-export const BASE_URL = "http://10.0.0.182:3333";
+export const BASE_URL = "https://ecopesca-app.onrender.com";
+//export const BASE_URL = "http://192.168.0.5:3333";
 
 export async function api(
   path,

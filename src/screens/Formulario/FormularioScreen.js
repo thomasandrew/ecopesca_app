@@ -26,7 +26,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 /* ========= CONFIG ROBOFLOW =========
  * Modelo 1 (Peixes): "fish-types2", versão 2
- * Modelo 2 (Bola): "golf-ball-detector-orange", versão 3, classe "orange-golf-ball"
+ * Modelo 2 (Bola/Círculo): "circle-finder-d4tvd", versão 1, classe "Circles"
  */
 const ROBOFLOW_COMMON = {
   API_KEY:
@@ -41,14 +41,13 @@ const ROBOFLOW_FISH = {
   VERSION: Number(Constants.expoConfig?.extra?.ROBOFLOW_FISH_VERSION) || 2,
 };
 
-// ✅ Novo modelo da bola (Roboflow Universe - Golf Ball Detector Orange)
+// ✅ Novo modelo da bola (Roboflow Universe - Circle Finder)
 const ROBOFLOW_BALL = {
   MODEL_SLUG:
-    Constants.expoConfig?.extra?.ROBOFLOW_BALL_MODEL ||
-    "golf-ball-detector-orange",
-  VERSION: Number(Constants.expoConfig?.extra?.ROBOFLOW_BALL_VERSION) || 3,
-  // nome da classe no dataset: orange-golf-ball
-  CLASS_NAME: "orange-golf-ball",
+    Constants.expoConfig?.extra?.ROBOFLOW_BALL_MODEL || "circle-finder-d4tvd",
+  VERSION: Number(Constants.expoConfig?.extra?.ROBOFLOW_BALL_VERSION) || 1,
+  // nome da classe no dataset: Circles
+  CLASS_NAME: "Circles",
 };
 
 // diâmetro real da bola usada como referência (cm) — AJUSTE para seu objeto real
@@ -506,9 +505,13 @@ export default function FormularioScreen() {
       (Array.isArray(fishJson?.predictions) ? fishJson.predictions : []).filter(
         (p) => p.confidence >= ROBOFLOW_COMMON.CONFIDENCE
       );
+
+    // ⬇️ usa somente classe "Circles" do modelo Circle Finder
     const ballPred =
       (Array.isArray(ballJson?.predictions) ? ballJson.predictions : []).filter(
-        (p) => p.confidence >= ROBOFLOW_COMMON.CONFIDENCE
+        (p) =>
+          p.confidence >= ROBOFLOW_COMMON.CONFIDENCE &&
+          p.class === ROBOFLOW_BALL.CLASS_NAME
       );
 
     const fishLabeled = fishPred.map((p) => ({ ...p, __src: "fish" }));
@@ -730,7 +733,7 @@ export default function FormularioScreen() {
             ) : null}
 
             <Text style={{ marginTop: 8, color: COLORS.subtext }}>
-              Referência: bola = {REFERENCE_BALL_DIAMETER_CM} cm.
+              Referência: bola/círculo = {REFERENCE_BALL_DIAMETER_CM} cm.
             </Text>
           </View>
           {cmInvalido && (

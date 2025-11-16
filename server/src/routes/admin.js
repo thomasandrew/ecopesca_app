@@ -1,32 +1,31 @@
 // server/src/routes/admin.js
 import { Router } from "express";
-import { dbPath } from "../db.js";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const router = Router();
 
 /**
  * GET /admin/download-db?secret=SEU_SEGREDO
  *
- * Baixa o arquivo SQLite que o backend está usando (dbPath).
- * Protegido com um "secret" simples via query string.
+ * Antes fazia download do arquivo SQLite.
+ * Agora avisamos que o banco está no Neon e deve ser exportado por lá.
  */
 router.get("/admin/download-db", (req, res) => {
   const { secret } = req.query;
 
-  // proteção básica
+  // proteção básica com ADMIN_SECRET
   if (secret !== process.env.ADMIN_SECRET) {
     return res.status(403).json({ error: "forbidden" });
   }
 
-  console.log(">>> Download do banco solicitado:", dbPath);
+  console.log(">>> /admin/download-db chamado (PostgreSQL / Neon)");
 
-  res.download(dbPath, "ecopesca_v2_render.db", (err) => {
-    if (err) {
-      console.error("Erro ao enviar banco:", err);
-      if (!res.headersSent) {
-        return res.status(500).json({ error: "erro ao baixar banco" });
-      }
-    }
+  return res.status(501).json({
+    error:
+      "Download direto do banco foi desativado. O banco agora está no Neon (PostgreSQL). " +
+      "Use o painel do Neon para exportar os dados.",
   });
 });
 

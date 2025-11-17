@@ -1,32 +1,44 @@
-import sqlite3 from "sqlite3";
-import path from "path";
-import { fileURLToPath } from "url";
+// server/src/db.js
+import pkg from "pg";
+const { Pool } = pkg;
 
-sqlite3.verbose();
+// DATABASE_URL vem do Render (.env em produção) ou do .env local
+if (!process.env.DATABASE_URL) {
+  console.error("❌ DATABASE_URL NÃO DEFINIDA! Configure no Render/Neon.");
+  process.exit(1);
+}
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Pool de conexões com o Neon
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }, // obrigatório no Neon
+});
 
-const dbPath = path.join(__dirname, "..", "ecopesca.db");
-export const db = new sqlite3.Database(dbPath);
+// helper para fazer queries com async/await
+export async function query(text, params) {
+  const res = await pool.query(text, params);
+  return res;
+}
 
-// cria tabelas na primeira execução
-db.serialize(() => {
-  db.run(`
+// cria tabelas na primeira vez
+export async function initDb() {
+  console.log("▶️ Conectando ao PostgreSQL (Neon) e criando tabelas...");
+
+  await query(`
     CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
       email TEXT NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
       avatar_url TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP DEFAULT NOW()
     )
   `);
 
-  db.run(`
+  await query(`
     CREATE TABLE IF NOT EXISTS registros (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id),
       nome TEXT NOT NULL,
       nome_popular TEXT,
       tamanho_cm REAL,
@@ -38,8 +50,9 @@ db.serialize(() => {
       isca TEXT,
       condicoes TEXT,
       vento TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id)
+      created_at TIMESTAMP DEFAULT NOW()
     )
   `);
-});
+
+  console.log("✅ Banco PostgreSQL pronto e rodando!");
+}

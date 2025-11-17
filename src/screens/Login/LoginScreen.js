@@ -10,6 +10,9 @@ import {
   StyleSheet,
   Switch,
   Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from "react-native";
 import { api } from "../../api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -42,18 +45,18 @@ export default function LoginScreen({ navigation }) {
         method: "POST",
         body: { email: email.trim(), password },
       });
+
       await AsyncStorage.setItem("@token", data.token);
       await AsyncStorage.setItem("@user", JSON.stringify(data.user));
+
       if (remember) {
         await AsyncStorage.setItem(
           "@session",
           JSON.stringify({ email: data.user.email })
         );
       }
-      Alert.alert(
-        "Sucesso",
-        `Bem-vindo, ${data.user.name || data.user.email}!`
-      );
+
+      Alert.alert("Sucesso", `Bem-vindo, ${data.user.name || data.user.email}!`);
       navigation.navigate("Formulario");
     } catch (e) {
       Alert.alert("Erro", String(e.message || e));
@@ -64,101 +67,150 @@ export default function LoginScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
-        <View style={styles.logoWrap}>
-          <Image
-            source={require("../../../assets/pescaLogo.jpg")}
-            resizeMode="contain"
-            style={styles.img}
-          />
-        </View>
+      <KeyboardAvoidingView
+        style={styles.flex1}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.container}>
+            {/* LOGO PRINCIPAL + LOGO MEROS EM DIAGONAL */}
+            <View style={styles.logoWrap}>
+              <Image
+                source={require("../../../assets/pescaLogo.jpg")}
+                resizeMode="contain"
+                style={styles.img}
+              />
 
-        <Text style={styles.title}>Entrar</Text>
-        <Text style={styles.subtitle}>Acesse sua conta</Text>
+              {/* Logo Meros em diagonal (acima e à direita) */}
+              <Image
+                source={require("../../../assets/merosLogo.png")}
+                resizeMode="contain"
+                style={styles.merosImg}
+              />
+            </View>
 
-        <View style={styles.field}>
-          <Text style={styles.label}>E-mail</Text>
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            style={[styles.input, emailError ? styles.inputError : null]}
-          />
-          {!!emailError && <Text style={styles.error}>{emailError}</Text>}
-        </View>
+            <Text style={styles.title}>Entrar</Text>
+            <Text style={styles.subtitle}>Acesse sua conta</Text>
 
-        <View style={styles.field}>
-          <Text style={styles.label}>Senha</Text>
-          <View style={styles.passRow}>
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPass}
-              style={[
-                styles.input,
-                passError ? styles.inputError : null,
-                { flex: 1 },
-              ]}
-            />
+            <View className="field" style={styles.field}>
+              <Text style={styles.label}>E-mail</Text>
+              <TextInput
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                style={[styles.input, emailError ? styles.inputError : null]}
+                returnKeyType="next"
+              />
+              {!!emailError && <Text style={styles.error}>{emailError}</Text>}
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Senha</Text>
+              <View style={styles.passRow}>
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPass}
+                  style={[
+                    styles.input,
+                    passError ? styles.inputError : null,
+                    { flex: 1 },
+                  ]}
+                  returnKeyType="done"
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPass((v) => !v)}
+                  style={styles.showBtn}
+                >
+                  <Text style={styles.showBtnText}>
+                    {showPass ? "Ocultar" : "Mostrar"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {!!passError && <Text style={styles.error}>{passError}</Text>}
+            </View>
+
+            <View style={styles.row}>
+              <View style={styles.remember}>
+                <Switch value={remember} onValueChange={setRemember} />
+                <Text style={styles.rememberText}>Lembrar-me</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() =>
+                  Alert.alert("Recuperar senha", "Link enviado (exemplo).")
+                }
+              >
+                <Text style={styles.forgot}>Esqueci minha senha</Text>
+              </TouchableOpacity>
+            </View>
+
             <TouchableOpacity
-              onPress={() => setShowPass((v) => !v)}
-              style={styles.showBtn}
+              onPress={handleLogin}
+              disabled={!formValid || loading}
+              style={[
+                styles.button,
+                (!formValid || loading) && styles.buttonDisabled,
+              ]}
             >
-              <Text style={styles.showBtnText}>
-                {showPass ? "Ocultar" : "Mostrar"}
+              {loading ? (
+                <ActivityIndicator />
+              ) : (
+                <Text style={styles.buttonText}>Entrar</Text>
+              )}
+            </TouchableOpacity>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity onPress={() => navigation.navigate("Cadastrar")}>
+              <Text style={styles.secondary}>
+                Não tem conta? <Text style={styles.link}>Cadastre-se</Text>
               </Text>
             </TouchableOpacity>
           </View>
-          {!!passError && <Text style={styles.error}>{passError}</Text>}
-        </View>
-
-        <View style={styles.row}>
-          <View style={styles.remember}>
-            <Switch value={remember} onValueChange={setRemember} />
-            <Text style={styles.rememberText}>Lembrar-me</Text>
-          </View>
-          <TouchableOpacity
-            onPress={() =>
-              Alert.alert("Recuperar senha", "Link enviado (exemplo).")
-            }
-          >
-            <Text style={styles.forgot}>Esqueci minha senha</Text>
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity
-          onPress={handleLogin}
-          disabled={!formValid || loading}
-          style={[
-            styles.button,
-            (!formValid || loading) && styles.buttonDisabled,
-          ]}
-        >
-          {loading ? (
-            <ActivityIndicator />
-          ) : (
-            <Text style={styles.buttonText}>Entrar</Text>
-          )}
-        </TouchableOpacity>
-
-        <View style={styles.divider} />
-
-        <TouchableOpacity onPress={() => navigation.navigate("Cadastrar")}>
-          <Text style={styles.secondary}>
-            Não tem conta? <Text style={styles.link}>Cadastre-se</Text>
-          </Text>
-        </TouchableOpacity>
-      </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#F7F7F7" },
-  container: { flex: 1, padding: 24, justifyContent: "center", gap: 12 },
-  logoWrap: { alignItems: "center", marginBottom: 8 },
-  img: { width: "70%", height: 120 },
+  flex1: { flex: 1 },
+  scroll: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingVertical: 24,
+    justifyContent: "center",
+  },
+  container: {
+    flexGrow: 1,
+    gap: 12,
+  },
+
+  // área das logos
+  logoWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+    paddingTop: 24,
+  },
+  img: {
+    width: 180,
+    height: 130,
+  },
+  merosImg: {
+    position: "absolute",
+    top: -10,
+    right: 40,
+    width: 150,
+    height: 60,
+  },
+
   title: { color: "#0D5B9D", fontSize: 32, fontWeight: "700" },
   subtitle: { color: "#2980b9", fontSize: 16 },
   field: { marginTop: 10 },

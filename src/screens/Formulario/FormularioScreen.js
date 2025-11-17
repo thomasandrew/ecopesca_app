@@ -1,4 +1,4 @@
-// src/screens/Formulario/FormularioScreen.js
+// src/screens/Formulario/FormularioScreen.js 
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -316,6 +316,30 @@ async function ensurePermission(kind) {
   return false;
 }
 
+// 🔸 Pergunta se o usuário quer cortar/editar a foto antes de abrir câmera/galeria
+const askShouldCrop = async () => {
+  return new Promise((resolve) => {
+    Alert.alert(
+      "Editar imagem",
+      "Você quer cortar/ajustar a foto agora?",
+      [
+        {
+          text: "Não cortar",
+          style: "cancel",
+          onPress: () => resolve(false),
+        },
+        {
+          text: "Cortar",
+          onPress: () => resolve(true),
+        },
+      ],
+      {
+        cancelable: true,
+      }
+    );
+  });
+};
+
 /* ===================== AUXILIARES ===================== */
 function combinePredictions(predFish = [], predBall = []) {
   return [
@@ -568,13 +592,15 @@ export default function FormularioScreen() {
       const ok = await ensurePermission("camera");
       if (!ok) return;
 
-      // ✅ com edição + aspecto mais vertical para cortar lados e topo/fundo
+      // 🔸 pergunta se quer cortar a foto
+      const shouldCrop = await askShouldCrop();
+
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: getImagesMediaTypes(),
         quality: 0.8,
         exif: false,
-        allowsEditing: true,
-        aspect: [3, 4], // retângulo em pé (bom para peixe)
+        allowsEditing: shouldCrop,
+        aspect: shouldCrop ? [3, 4] : undefined,
       });
 
       if (!result?.canceled) {
@@ -597,12 +623,14 @@ export default function FormularioScreen() {
       const ok = await ensurePermission("library");
       if (!ok) return;
 
-      // ✅ com edição + aspecto vertical
+      // 🔸 pergunta se quer cortar a foto
+      const shouldCrop = await askShouldCrop();
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: getImagesMediaTypes(),
         quality: 0.9,
-        allowsEditing: true,
-        aspect: [3, 4], // mesmo aspecto da câmera
+        allowsEditing: shouldCrop,
+        aspect: shouldCrop ? [3, 4] : undefined,
         exif: false,
         selectionLimit: 1,
       });

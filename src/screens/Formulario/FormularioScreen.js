@@ -1,5 +1,5 @@
 // src/screens/Formulario/FormularioScreen.js
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -23,8 +23,6 @@ import { api } from "../../api";
 import Svg, { Rect, Text as SvgText } from "react-native-svg";
 // ✅ Safe areas sem depreciação
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-// ✅ Crop nativo
-import { CropView } from "react-native-image-crop-tools";
 
 /* ========= CONFIG ROBOFLOW =========
  * Modelo 1 (Peixes): "fish-types2", versão 2
@@ -33,6 +31,7 @@ import { CropView } from "react-native-image-crop-tools";
 const ROBOFLOW_COMMON = {
   API_KEY:
     Constants.expoConfig?.extra?.ROBOFLOW_API_KEY || "Toq1XAi5qwg69JrseuR5",
+  // Confiança mais baixa para facilitar os testes de detecção
   CONFIDENCE: 0.3,
 };
 
@@ -47,10 +46,12 @@ const ROBOFLOW_BALL = {
   MODEL_SLUG:
     Constants.expoConfig?.extra?.ROBOFLOW_BALL_MODEL || "circle-finder-d4tvd",
   VERSION: Number(Constants.expoConfig?.extra?.ROBOFLOW_BALL_VERSION) || 1,
+  // nome da classe no dataset: Circles
   CLASS_NAME: "Circles",
 };
 
-// diâmetro real da bola usada como referência (cm)
+// diâmetro real da bola usada como referência (cm) — AJUSTE para seu objeto real
+// padrão: bola de golfe oficial (FishTechy usa isso): 4.268 cm
 const REFERENCE_BALL_DIAMETER_CM =
   Number(Constants.expoConfig?.extra?.REFERENCE_BALL_DIAMETER_CM) || 4.268;
 
@@ -91,7 +92,7 @@ function Dropdown({
   renderHeader,
 }) {
   const [open, setOpen] = useState(false);
-  const insets = useSafeAreaInsets();
+  const insets = useSafeAreaInsets(); // << usa safe area do Android/iOS
 
   return (
     <View style={ddStyles.block}>
@@ -119,6 +120,7 @@ function Dropdown({
             style={[
               ddStyles.sheet,
               {
+                // deixa o sheet acima da barra de navegação / gesto
                 paddingBottom: 12 + insets.bottom,
                 maxHeight: "72%",
               },
@@ -142,6 +144,7 @@ function Dropdown({
                 ) : null
               }
               ItemSeparatorComponent={() => <View style={ddStyles.sep} />}
+              // padding extra no fim, para a última opção não ficar atrás da barra
               contentContainerStyle={{
                 paddingBottom: 24 + insets.bottom,
               }}
@@ -281,6 +284,7 @@ const VENTO = [
 ];
 
 /* ===================== HELPERS (permissões & compat) ===================== */
+// compat: MediaType novo (SDKs recentes) ou MediaTypeOptions (antigos)
 const getImagesMediaTypes = () => {
   if (ImagePicker?.MediaType) return [ImagePicker.MediaType.Images];
   return ImagePicker.MediaTypeOptions?.Images ?? undefined;
@@ -481,12 +485,6 @@ export default function FormularioScreen() {
 
   const [mapFull, setMapFull] = useState(false);
 
-  // === estados do crop ===
-  const [cropVisible, setCropVisible] = useState(false);
-  const [cropSourceUri, setCropSourceUri] = useState(null);
-  const [cropOrigem, setCropOrigem] = useState(null);
-  const cropViewRef = useRef(null);
-
   const nomeErro = nome.length > 0 && nome.trim().length < 2;
   const areaErro = !area;
   const cmInvalido = cm.length > 0 && (isNaN(Number(cm)) || Number(cm) <= 0);
@@ -513,6 +511,7 @@ export default function FormularioScreen() {
     const fishJson = await fishRes.json().catch(() => ({}));
     const ballJson = await ballRes.json().catch(() => ({}));
 
+    // logs para depurar a resposta dos modelos
     console.log("FISH JSON =>", fishJson);
     console.log("BALL JSON =>", ballJson);
 
@@ -521,6 +520,7 @@ export default function FormularioScreen() {
         (p) => p.confidence >= ROBOFLOW_COMMON.CONFIDENCE
       );
 
+    // ⬇️ usa somente classe "Circles" do modelo Circle Finder
     const ballPred =
       (Array.isArray(ballJson?.predictions) ? ballJson.predictions : []).filter(
         (p) =>
@@ -554,45 +554,13 @@ export default function FormularioScreen() {
     }
   };
 
-  // === abre o crop após tirar/selecionar foto ===
-  const abrirCropper = async (uri, origem) => {
-    // se estiver rodando no web, não dá pra usar o módulo nativo -> usa sem cortar
-    if (Platform.OS === "web") {
-      setFotoUri(uri);
-      setFotoOrigem(origem);
-      setPredicoes([]);
-      await rodarDeteccao(uri);
-      return;
-    }
-    setCropSourceUri(uri);
-    setCropOrigem(origem);
-    setCropVisible(true);
-  };
-
-  const aoCortarImagem = async (res) => {
-    try {
-      const { uri } = res;
-      if (!uri) throw new Error("Sem URI da imagem recortada.");
-      setCropVisible(false);
-      setCropSourceUri(null);
-
-      setFotoUri(uri);
-      setFotoOrigem(cropOrigem);
-      setPredicoes([]);
-      await rodarDeteccao(uri);
-    } catch (e) {
-      console.log("aoCortarImagem error:", e);
-      Alert.alert("Crop", String(e?.message || e));
-    }
-  };
-
   // === abrir câmera ===
   const abrirCamera = async () => {
     try {
       if (Platform.OS === "web") {
         Alert.alert(
           "Não suportado",
-          "A câmera não abre no web preview. Teste no celular."
+          "A câmera não abre no web preview. Teste no celular (Expo Go)."
         );
         return;
       }
@@ -600,17 +568,22 @@ export default function FormularioScreen() {
       const ok = await ensurePermission("camera");
       if (!ok) return;
 
+      // ✅ com edição + aspecto mais vertical para cortar lados e topo/fundo
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: getImagesMediaTypes(),
         quality: 0.8,
         exif: false,
-        allowsEditing: false,
+        allowsEditing: true,
+        aspect: [3, 4], // retângulo em pé (bom para peixe)
       });
 
       if (!result?.canceled) {
         const uri = result.assets?.[0]?.uri;
         if (!uri) throw new Error("Sem URI da foto.");
-        await abrirCropper(uri, "camera");
+        setFotoUri(uri);
+        setFotoOrigem("camera");
+        setPredicoes([]);
+        await rodarDeteccao(uri);
       }
     } catch (e) {
       console.log("abrirCamera error:", e);
@@ -624,10 +597,12 @@ export default function FormularioScreen() {
       const ok = await ensurePermission("library");
       if (!ok) return;
 
+      // ✅ com edição + aspecto vertical
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: getImagesMediaTypes(),
         quality: 0.9,
-        allowsEditing: false,
+        allowsEditing: true,
+        aspect: [3, 4], // mesmo aspecto da câmera
         exif: false,
         selectionLimit: 1,
       });
@@ -635,7 +610,10 @@ export default function FormularioScreen() {
       if (!result?.canceled) {
         const uri = result.assets?.[0]?.uri;
         if (!uri) throw new Error("Sem URI da imagem selecionada.");
-        await abrirCropper(uri, "galeria");
+        setFotoUri(uri);
+        setFotoOrigem("galeria");
+        setPredicoes([]);
+        await rodarDeteccao(uri);
       }
     } catch (e) {
       console.log("abrirGaleria error:", e);
@@ -684,6 +662,7 @@ export default function FormularioScreen() {
   };
 
   return (
+    // ✅ SafeAreaView da lib react-native-safe-area-context (sem warning)
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
       <ScrollView>
         <View style={styles.container}>
@@ -883,7 +862,7 @@ export default function FormularioScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ===== Modal tela cheia com pinch-to-zoom do mapa ===== */}
+        {/* ===== Modal tela cheia com pinch-to-zoom ===== */}
         <Modal
           visible={mapFull}
           transparent
@@ -918,68 +897,6 @@ export default function FormularioScreen() {
             </TouchableOpacity>
           </Pressable>
         </Modal>
-
-        {/* ===== Modal do recorte da foto ===== */}
-        <Modal
-          visible={cropVisible}
-          animationType="slide"
-          transparent={false}
-          onRequestClose={() => setCropVisible(false)}
-        >
-          <SafeAreaView style={{ flex: 1, backgroundColor: "#000" }}>
-            <View style={{ flex: 1 }}>
-              {cropSourceUri ? (
-                <CropView
-                  style={{ flex: 1 }}
-                  sourceUrl={cropSourceUri}
-                  ref={cropViewRef}
-                  onImageCrop={aoCortarImagem}
-                  keepAspectRatio={false}
-                />
-              ) : null}
-            </View>
-
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                paddingHorizontal: 16,
-                paddingVertical: 12,
-                backgroundColor: "#111",
-              }}
-            >
-              <TouchableOpacity
-                onPress={() => {
-                  setCropVisible(false);
-                  setCropSourceUri(null);
-                }}
-                style={{
-                  paddingVertical: 10,
-                  paddingHorizontal: 16,
-                  borderRadius: 10,
-                  borderWidth: 1,
-                  borderColor: "#555",
-                }}
-              >
-                <Text style={{ color: "#fff" }}>Cancelar</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => cropViewRef.current?.saveImage(true, 90)}
-                style={{
-                  paddingVertical: 10,
-                  paddingHorizontal: 16,
-                  borderRadius: 10,
-                  backgroundColor: "#4CAF50",
-                }}
-              >
-                <Text style={{ color: "#fff", fontWeight: "700" }}>
-                  Usar foto recortada
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </SafeAreaView>
-        </Modal>
       </ScrollView>
     </SafeAreaView>
   );
@@ -991,7 +908,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.bg,
     paddingHorizontal: PADDING_X,
-    paddingTop: 16,
+    paddingTop: 16, // padding reduzido pois SafeAreaView já cuida do topo
   },
   title: { fontSize: 28, fontWeight: "800", color: COLORS.label },
   subtitle: { color: COLORS.subtext, marginTop: 4, marginBottom: 14 },

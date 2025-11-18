@@ -77,19 +77,12 @@ export default function LoginScreen({ navigation }) {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.container}>
-            {/* LOGO PRINCIPAL + LOGO MEROS EM DIAGONAL */}
+            {/* LOGO PRINCIPAL */}
             <View style={styles.logoWrap}>
               <Image
                 source={require("../../../assets/pescaLogo.jpg")}
                 resizeMode="contain"
                 style={styles.img}
-              />
-
-              {/* Logo Meros em diagonal (acima e à direita) */}
-              <Image
-                source={require("../../../assets/merosLogo.png")}
-                resizeMode="contain"
-                style={styles.merosImg}
               />
             </View>
 
@@ -192,7 +185,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
-  // área das logos
+  // área da logo principal
   logoWrap: {
     alignItems: "center",
     justifyContent: "center",
@@ -202,13 +195,6 @@ const styles = StyleSheet.create({
   img: {
     width: 180,
     height: 130,
-  },
-  merosImg: {
-    position: "absolute",
-    top: -10,
-    right: 40,
-    width: 150,
-    height: 60,
   },
 
   title: { color: "#0D5B9D", fontSize: 32, fontWeight: "700" },

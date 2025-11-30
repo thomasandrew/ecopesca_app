@@ -1,13 +1,9 @@
-// server/src/routes/registros.js
 import { Router } from "express";
 import { query } from "../db.js";
 import { auth } from "../middleware/auth.js";
 
 const router = Router();
 
-/**
- * POST /registros  (precisa de Bearer token)
- */
 router.post("/", auth, async (req, res) => {
   console.log(">>> POST /registros - payload recebido:", req.body);
   console.log(">>> Usuário autenticado:", req.user);
@@ -26,7 +22,6 @@ router.post("/", auth, async (req, res) => {
     vento,
   } = req.body || {};
 
-  // validação simples
   if (!nome || !area || !data || !dia || !turno) {
     console.warn("⚠️ Campos obrigatórios ausentes em /registros");
     return res.status(400).json({ error: "campos obrigatórios ausentes" });
@@ -81,9 +76,6 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
-/**
- * GET /registros  (lista do usuário logado)
- */
 router.get("/", auth, async (req, res) => {
   console.log(">>> GET /registros para user_id:", req.user.id);
 

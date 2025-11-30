@@ -1,4 +1,3 @@
-// server/src/index.js
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -21,7 +20,6 @@ app.use(adminRoutes); // continua registando /admin/...
 
 const PORT = process.env.PORT || 3333;
 
-// inicializa o banco e só depois sobe o servidor
 async function bootstrap() {
   try {
     await initDb();

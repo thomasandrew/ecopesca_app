@@ -1,4 +1,3 @@
-// server/src/index.js
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -17,11 +16,10 @@ app.get("/", (_, res) => res.json({ ok: true, app: "ecopesca_api" }));
 
 app.use("/auth", authRoutes);
 app.use("/registros", registrosRoutes);
-app.use(adminRoutes); // continua registando /admin/...
+app.use(adminRoutes);
 
 const PORT = process.env.PORT || 3333;
 
-// inicializa o banco e só depois sobe o servidor
 async function bootstrap() {
   try {
     await initDb();

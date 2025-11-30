@@ -1,4 +1,3 @@
-// server/src/routes/auth.js
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -9,13 +8,8 @@ dotenv.config();
 
 const router = Router();
 
-// se não tiver JWT_SECRET no .env, usa um padrão de desenvolvimento
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-ecopesca";
 
-/**
- * POST /auth/register
- * body: { name, email, password, avatarUrl? }
- */
 router.post("/register", async (req, res) => {
   const { name, email, password, avatarUrl } = req.body || {};
 
@@ -61,10 +55,6 @@ router.post("/register", async (req, res) => {
   }
 });
 
-/**
- * POST /auth/login
- * body: { email, password }
- */
 router.post("/login", async (req, res) => {
   const { email, password } = req.body || {};
 

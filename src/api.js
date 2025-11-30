@@ -1,7 +1,5 @@
-// src/api.js
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// src/api.js
 export const BASE_URL = "https://ecopesca-app.onrender.com";
 //export const BASE_URL = "http://192.168.0.5:3333";
 
@@ -11,7 +9,6 @@ export async function api(
 ) {
   const headers = { "Content-Type": "application/json" };
 
-  // se a rota exigir token (auth: true), pega do AsyncStorage e envia
   if (auth) {
     const token = await AsyncStorage.getItem("@token");
     if (token) headers.Authorization = `Bearer ${token}`;

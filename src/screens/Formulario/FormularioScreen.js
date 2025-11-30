@@ -1,5 +1,4 @@
-// src/screens/Formulario/FormularioScreen.js 
-import React, { useState, useEffect } from "react";
+ import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -21,13 +20,8 @@ import * as FileSystem from "expo-file-system/legacy";
 import Constants from "expo-constants";
 import { api } from "../../api";
 import Svg, { Rect, Text as SvgText } from "react-native-svg";
-// ✅ Safe areas sem depreciação
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
-/* ========= CONFIG ROBOFLOW =========
- * Modelo 1 (Peixes): "fish-types2", versão 2
- * Modelo 2 (Bola/Círculo): "circle-finder-d4tvd", versão 1, classe "Circles"
- */
 const ROBOFLOW_COMMON = {
   API_KEY:
     Constants.expoConfig?.extra?.ROBOFLOW_API_KEY || "Toq1XAi5qwg69JrseuR5",
@@ -41,17 +35,13 @@ const ROBOFLOW_FISH = {
   VERSION: Number(Constants.expoConfig?.extra?.ROBOFLOW_FISH_VERSION) || 2,
 };
 
-// ✅ Novo modelo da bola (Roboflow Universe - Circle Finder)
 const ROBOFLOW_BALL = {
   MODEL_SLUG:
     Constants.expoConfig?.extra?.ROBOFLOW_BALL_MODEL || "circle-finder-d4tvd",
   VERSION: Number(Constants.expoConfig?.extra?.ROBOFLOW_BALL_VERSION) || 1,
-  // nome da classe no dataset: Circles
   CLASS_NAME: "Circles",
 };
 
-// diâmetro real da bola usada como referência (cm) — AJUSTE para seu objeto real
-// padrão: bola de golfe oficial (FishTechy usa isso): 4.268 cm
 const REFERENCE_BALL_DIAMETER_CM =
   Number(Constants.expoConfig?.extra?.REFERENCE_BALL_DIAMETER_CM) || 4.268;
 
@@ -92,7 +82,7 @@ function Dropdown({
   renderHeader,
 }) {
   const [open, setOpen] = useState(false);
-  const insets = useSafeAreaInsets(); // << usa safe area do Android/iOS
+  const insets = useSafeAreaInsets(); 
 
   return (
     <View style={ddStyles.block}>
@@ -120,7 +110,6 @@ function Dropdown({
             style={[
               ddStyles.sheet,
               {
-                // deixa o sheet acima da barra de navegação / gesto
                 paddingBottom: 12 + insets.bottom,
                 maxHeight: "72%",
               },
@@ -144,7 +133,6 @@ function Dropdown({
                 ) : null
               }
               ItemSeparatorComponent={() => <View style={ddStyles.sep} />}
-              // padding extra no fim, para a última opção não ficar atrás da barra
               contentContainerStyle={{
                 paddingBottom: 24 + insets.bottom,
               }}
@@ -284,7 +272,6 @@ const VENTO = [
 ];
 
 /* ===================== HELPERS (permissões & compat) ===================== */
-// compat: MediaType novo (SDKs recentes) ou MediaTypeOptions (antigos)
 const getImagesMediaTypes = () => {
   if (ImagePicker?.MediaType) return [ImagePicker.MediaType.Images];
   return ImagePicker.MediaTypeOptions?.Images ?? undefined;
@@ -316,7 +303,6 @@ async function ensurePermission(kind) {
   return false;
 }
 
-// 🔸 Pergunta se o usuário quer cortar/editar a foto antes de abrir câmera/galeria
 const askShouldCrop = async () => {
   return new Promise((resolve) => {
     Alert.alert(
@@ -513,7 +499,6 @@ export default function FormularioScreen() {
   const areaErro = !area;
   const cmInvalido = cm.length > 0 && (isNaN(Number(cm)) || Number(cm) <= 0);
 
-  // chama 2 modelos em paralelo
   const runRoboflowBoth = async (base64) => {
     const qs = (slug, ver) =>
       `https://serverless.roboflow.com/${slug}/${ver}?api_key=${ROBOFLOW_COMMON.API_KEY}&confidence=${ROBOFLOW_COMMON.CONFIDENCE}`;
@@ -535,7 +520,6 @@ export default function FormularioScreen() {
     const fishJson = await fishRes.json().catch(() => ({}));
     const ballJson = await ballRes.json().catch(() => ({}));
 
-    // logs para depurar a resposta dos modelos
     console.log("FISH JSON =>", fishJson);
     console.log("BALL JSON =>", ballJson);
 
@@ -544,7 +528,6 @@ export default function FormularioScreen() {
         (p) => p.confidence >= ROBOFLOW_COMMON.CONFIDENCE
       );
 
-    // ⬇️ usa somente classe "Circles" do modelo Circle Finder
     const ballPred =
       (Array.isArray(ballJson?.predictions) ? ballJson.predictions : []).filter(
         (p) =>
@@ -592,7 +575,6 @@ export default function FormularioScreen() {
       const ok = await ensurePermission("camera");
       if (!ok) return;
 
-      // 🔸 pergunta se quer cortar a foto
       const shouldCrop = await askShouldCrop();
 
       const result = await ImagePicker.launchCameraAsync({
@@ -623,7 +605,6 @@ export default function FormularioScreen() {
       const ok = await ensurePermission("library");
       if (!ok) return;
 
-      // 🔸 pergunta se quer cortar a foto
       const shouldCrop = await askShouldCrop();
 
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -690,7 +671,6 @@ export default function FormularioScreen() {
   };
 
   return (
-    // ✅ SafeAreaView da lib react-native-safe-area-context (sem warning)
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
       <ScrollView>
         <View style={styles.container}>

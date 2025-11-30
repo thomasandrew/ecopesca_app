@@ -40,7 +40,6 @@ export default function CadastrarScreen({ navigation }) {
   const pwdOk = pwd.length >= 6;
   const match = pwd && pwd2 && pwd === pwd2;
 
-  // FOTO NÃO É MAIS OBRIGATÓRIA
   const disabled = !(nameOk && emailOk && pwdOk && match);
 
   const pickImage = async () => {

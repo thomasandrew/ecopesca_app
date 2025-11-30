@@ -1,4 +1,3 @@
-// src/screens/Formulario/FormularioScreen.js
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -21,13 +20,8 @@ import * as FileSystem from "expo-file-system/legacy";
 import Constants from "expo-constants";
 import { api } from "../../api";
 import Svg, { Rect, Text as SvgText } from "react-native-svg";
-// ✅ Safe areas sem depreciação
 import { SafeAreaView } from "react-native-safe-area-context";
 
-/* ========= CONFIG ROBOFLOW =========
- * Modelo 1 (Peixes): "fish-types2", versão 2
- * Modelo 2 (Bola): "orangeball-y5y61", versão 1
- */
 const ROBOFLOW_COMMON = {
   API_KEY:
     Constants.expoConfig?.extra?.ROBOFLOW_API_KEY || "Toq1XAi5qwg69JrseuR5",
@@ -47,7 +41,6 @@ const ROBOFLOW_BALL = {
   CLASS_NAME: "orange-ball",
 };
 
-// diâmetro real da bola usada como referência (cm) — AJUSTE para seu objeto real
 const REFERENCE_BALL_DIAMETER_CM =
   Number(Constants.expoConfig?.extra?.REFERENCE_BALL_DIAMETER_CM) || 5.36;
 
@@ -266,7 +259,6 @@ const VENTO = [
 ];
 
 /* ===================== HELPERS (permissões & compat) ===================== */
-// compat: MediaType novo (SDKs recentes) ou MediaTypeOptions (antigos)
 const getImagesMediaTypes = () => {
   if (ImagePicker?.MediaType) return [ImagePicker.MediaType.Images];
   return ImagePicker.MediaTypeOptions?.Images ?? undefined;
@@ -470,7 +462,6 @@ export default function FormularioScreen() {
   const areaErro = !area;
   const cmInvalido = cm.length > 0 && (isNaN(Number(cm)) || Number(cm) <= 0);
 
-  // chama 2 modelos em paralelo
   const runRoboflowBoth = async (base64) => {
     const qs = (slug, ver) =>
       `https://serverless.roboflow.com/${slug}/${ver}?api_key=${ROBOFLOW_COMMON.API_KEY}&confidence=${ROBOFLOW_COMMON.CONFIDENCE}`;
@@ -631,7 +622,6 @@ export default function FormularioScreen() {
   };
 
   return (
-    // ✅ SafeAreaView da lib react-native-safe-area-context (sem warning)
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
       <ScrollView>
         <View style={styles.container}>
@@ -871,7 +861,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.bg,
     paddingHorizontal: PADDING_X,
-    paddingTop: 16, // padding reduzido pois SafeAreaView já cuida do topo
+    paddingTop: 16, 
   },
   title: { fontSize: 28, fontWeight: "800", color: COLORS.label },
   subtitle: { color: COLORS.subtext, marginTop: 4, marginBottom: 14 },

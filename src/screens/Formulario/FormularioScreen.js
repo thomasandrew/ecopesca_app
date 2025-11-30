@@ -1,4 +1,3 @@
-// src/screens/Formulario/FormularioScreen.js
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -21,17 +20,12 @@ import * as FileSystem from "expo-file-system/legacy";
 import Constants from "expo-constants";
 import { api } from "../../api";
 import Svg, { Rect, Text as SvgText } from "react-native-svg";
-// ✅ Safe areas sem depreciação
+
 import { SafeAreaView } from "react-native-safe-area-context";
 
-/* ========= CONFIG ROBOFLOW =========
- * Modelo 1 (Peixes): "fish-types2", versão 2
- * Modelo 2 (Bola/Círculo): "circle-finder-d4tvd", versão 1, classe "Circles"
- */
 const ROBOFLOW_COMMON = {
   API_KEY:
     Constants.expoConfig?.extra?.ROBOFLOW_API_KEY || "Toq1XAi5qwg69JrseuR5",
-  // Confiança mais baixa para facilitar os testes de detecção
   CONFIDENCE: 0.3,
 };
 
@@ -41,17 +35,13 @@ const ROBOFLOW_FISH = {
   VERSION: Number(Constants.expoConfig?.extra?.ROBOFLOW_FISH_VERSION) || 2,
 };
 
-// ✅ Novo modelo da bola (Roboflow Universe - Circle Finder)
 const ROBOFLOW_BALL = {
   MODEL_SLUG:
     Constants.expoConfig?.extra?.ROBOFLOW_BALL_MODEL || "circle-finder-d4tvd",
   VERSION: Number(Constants.expoConfig?.extra?.ROBOFLOW_BALL_VERSION) || 1,
-  // nome da classe no dataset: Circles
   CLASS_NAME: "Circles",
 };
 
-// diâmetro real da bola usada como referência (cm) — AJUSTE para seu objeto real
-// padrão: bola de golfe oficial (FishTechy usa isso): 4.268 cm
 const REFERENCE_BALL_DIAMETER_CM =
   Number(Constants.expoConfig?.extra?.REFERENCE_BALL_DIAMETER_CM) || 4.268;
 
@@ -270,7 +260,6 @@ const VENTO = [
 ];
 
 /* ===================== HELPERS (permissões & compat) ===================== */
-// compat: MediaType novo (SDKs recentes) ou MediaTypeOptions (antigos)
 const getImagesMediaTypes = () => {
   if (ImagePicker?.MediaType) return [ImagePicker.MediaType.Images];
   return ImagePicker.MediaTypeOptions?.Images ?? undefined;
@@ -475,7 +464,6 @@ export default function FormularioScreen() {
   const areaErro = !area;
   const cmInvalido = cm.length > 0 && (isNaN(Number(cm)) || Number(cm) <= 0);
 
-  // chama 2 modelos em paralelo
   const runRoboflowBoth = async (base64) => {
     const qs = (slug, ver) =>
       `https://serverless.roboflow.com/${slug}/${ver}?api_key=${ROBOFLOW_COMMON.API_KEY}&confidence=${ROBOFLOW_COMMON.CONFIDENCE}`;
@@ -497,7 +485,6 @@ export default function FormularioScreen() {
     const fishJson = await fishRes.json().catch(() => ({}));
     const ballJson = await ballRes.json().catch(() => ({}));
 
-    // logs para depurar a resposta dos modelos
     console.log("FISH JSON =>", fishJson);
     console.log("BALL JSON =>", ballJson);
 
@@ -506,7 +493,6 @@ export default function FormularioScreen() {
         (p) => p.confidence >= ROBOFLOW_COMMON.CONFIDENCE
       );
 
-    // ⬇️ usa somente classe "Circles" do modelo Circle Finder
     const ballPred =
       (Array.isArray(ballJson?.predictions) ? ballJson.predictions : []).filter(
         (p) =>
@@ -644,7 +630,6 @@ export default function FormularioScreen() {
   };
 
   return (
-    // ✅ SafeAreaView da lib react-native-safe-area-context (sem warning)
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
       <ScrollView>
         <View style={styles.container}>
@@ -890,7 +875,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.bg,
     paddingHorizontal: PADDING_X,
-    paddingTop: 16, // padding reduzido pois SafeAreaView já cuida do topo
+    paddingTop: 16, 
   },
   title: { fontSize: 28, fontWeight: "800", color: COLORS.label },
   subtitle: { color: COLORS.subtext, marginTop: 4, marginBottom: 14 },
